@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "quy-session";
-import { RequireLogin, when } from "@/components/app";
+import { Mark, RequireLogin, when } from "@/components/app";
 
 const ROLE_MEANING: Record<string, string> = {
   treasurer: "Thủ quỹ: tạo lệnh chi, duyệt lệnh chi của người khác",
@@ -143,7 +143,9 @@ function TidePanel() {
             <ul className="probes">
               {probes.map((p, i) => (
                 <li key={i} className={p.status === 200 ? "ok" : "bad"}>
-                  <b>{p.status === 200 ? "✅" : "⛔"} {p.label}</b> · HTTP {p.status ?? "lỗi"} {p.message && `· ${p.message}`}
+                  <b>
+                    <Mark kind={p.status === 200 ? "ok" : "bad"} /> {p.label}
+                  </b> · HTTP {p.status ?? "lỗi"} {p.message && `· ${p.message}`}
                 </li>
               ))}
             </ul>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AppState, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import { AppState, Mark, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
 
 /** What is waiting on the current user: approvals, evidence reviews, receipt confirmations. */
 function todo(state: AppState) {
@@ -120,7 +120,7 @@ function Home() {
               const fund = state.funds.find((f) => f.id === l.fundId);
               return (
                 <Link key={l.id} href={fund ? `/funds/${fund.id}#log` : "/log"} className="log-line">
-                  ⛔ <b>{nameOf(state, l.actorId)}</b> · {fund?.name ?? ""} <small className="muted">{when(l.at)}</small>
+                  <Mark kind="bad" /> <b>{nameOf(state, l.actorId)}</b> · {fund?.name ?? ""} <small className="muted">{when(l.at)}</small>
                 </Link>
               );
             })}

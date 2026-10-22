@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppState, Icon, LogTable, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import { AppState, Icon, LogTable, Mark, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
 import type { Approval, Fund, Payout, Rejection, RuleChange } from "@/lib/fund/types";
 
 type Act = (body: Record<string, unknown> | FormData) => Promise<boolean>;
@@ -35,18 +35,23 @@ function Votes({ state, approvals, rejections, quorum }: { state: AppState; appr
   return (
     <div className="votes">
       <span>
-        ✅ Duyệt {valid.length}/{quorum}
+        <Mark kind="ok" /> Duyệt {valid.length}/{quorum}
         {valid.length > 0 && <>: {valid.map((a) => nameOf(state, a.userId)).join(", ")}</>}
-        {valid.length > 0 && <span className="muted"> · 🔏 chữ ký Tide hợp lệ</span>}
+        {valid.length > 0 && (
+          <span className="muted">
+            {" "}
+            · <Mark kind="lock" /> chữ ký Tide hợp lệ
+          </span>
+        )}
       </span>
       {forged.map((a) => (
         <span key={a.userId} className="bad">
-          ⚠️ Lượt duyệt mạo danh {nameOf(state, a.userId)}: chữ ký Tide không hợp lệ, không được tính
+          <Mark kind="warn" /> Lượt duyệt mạo danh {nameOf(state, a.userId)}: chữ ký Tide không hợp lệ, không được tính
         </span>
       ))}
       {rejections?.map((r) => (
         <span key={r.userId} className="bad">
-          ❌ {nameOf(state, r.userId)} từ chối: “{r.reason}”
+          <Mark kind="bad" /> {nameOf(state, r.userId)} từ chối: “{r.reason}”
         </span>
       ))}
     </div>
@@ -83,7 +88,7 @@ function Contribute({ fund, act }: { fund: Fund; act: Act }) {
   );
 }
 
-/** Centered dialog; closes on the backdrop, the ✕ or Escape. */
+/** Centered dialog; closes on the backdrop, the close button or Escape. */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -291,10 +296,8 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
   const me = state.me.id;
   const recipient = fund.recipients.find((r) => r.id === payout.recipientId);
   const iAmRecipient = recipient?.userId === me;
-  const myRole = roleOf(fund, me);
   const { tone, icon } = TONE[payout.status];
-  const mayUpload =
-    myRole === "organiser" || payout.proposerId === me || (fund.kind === "group" && (myRole === "treasurer" || myRole === "member"));
+  const mayUpload = payout.proposerId === me;
   const evidenceLabel = fund.kind === "group" ? EVIDENCE[payout.evidenceStatus].replace("hội đồng", "thành viên") : EVIDENCE[payout.evidenceStatus];
 
   return (
@@ -316,7 +319,11 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
 
         <div className="feed-box">
           <Votes state={state} approvals={payout.approvals} rejections={payout.rejections} quorum={fund.rules.quorum} />
-          {payout.recipientConfirmedAt && <p className="muted">✔ Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}</p>}
+          {payout.recipientConfirmedAt && (
+            <p className="muted">
+              <Mark kind="ok" /> Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}
+            </p>
+          )}
           <div className="row">
             {payout.status === "pending" && (
               <VoteButtons
@@ -409,7 +416,18 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
       : c.spec.type === "add_recipient"
         ? `Thêm người nhận "${c.spec.name}" (${c.spec.account})`
         : `Đóng chiến dịch và hoàn tiền: ${c.spec.reason}`;
-  const STATUS_LABEL = { applied: "✅ đã áp dụng", rejected: "❌ bị từ chối" } as Record<string, string>;
+  const STATUS_LABEL: Record<string, React.ReactNode> = {
+    applied: (
+      <>
+        <Mark kind="ok" /> đã áp dụng
+      </>
+    ),
+    rejected: (
+      <>
+        <Mark kind="bad" /> bị từ chối
+      </>
+    ),
+  };
   return (
     <section className="card">
       <h3>Luật quỹ</h3>
@@ -536,7 +554,12 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
             <li key={c.id} className="stack-sm">
               <span>
                 “{c.spec.type === "close_refund" && c.spec.reason}” · đề xuất bởi {nameOf(state, c.proposerId)}
-                {c.status === "rejected" && " · ❌ bị từ chối"}
+                {c.status === "rejected" && (
+                  <>
+                    {" "}
+                    · <Mark kind="bad" /> bị từ chối
+                  </>
+                )}
               </span>
               <Votes state={state} approvals={c.approvals} rejections={c.rejections} quorum={fund.rules.quorum} />
               {c.status === "pending" && (

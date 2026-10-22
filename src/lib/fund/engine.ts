@@ -331,12 +331,8 @@ export function submitEvidence(
   noAdmin(actor);
   const payout = getPayout(db, payoutId);
   const fund = getFund(db, payout.fundId);
-  // Charity: the organiser or the proposer. Group fund: any member (whoever paid has the receipt).
-  const role = actorRole(fund, actor);
-  const mayUpload = payout.proposerId === actor.id || role === "organiser" || (fund.kind === "group" && (role === "treasurer" || role === "member"));
-  if (!mayUpload) {
-    block(fund.kind === "group" ? "Chỉ thành viên quỹ mới nộp minh chứng." : "Chỉ người đề xuất khoản chi mới nộp minh chứng.");
-  }
+  // Only whoever created the payout answers for it, so only they upload its evidence.
+  if (payout.proposerId !== actor.id) block("Chỉ người tạo lệnh chi này mới được nộp minh chứng.");
   if (payout.status !== "executed") block("Chỉ nộp minh chứng sau khi khoản chi đã thực hiện.");
 
   const hash = sha256(file.data);

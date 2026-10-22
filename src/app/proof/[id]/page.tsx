@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { vnd, when } from "@/components/app";
+import { Mark, vnd, when } from "@/components/app";
 
 const INTEGRITY = {
-  ok: "✅ Khớp mã băm lúc nộp",
-  tampered: "⚠️ File đã bị sửa sau khi nộp (mã băm không khớp)",
-  missing: "⚠️ File đã bị xoá",
+  ok: "Khớp mã băm lúc nộp",
+  tampered: "File đã bị sửa sau khi nộp (mã băm không khớp)",
+  missing: "File đã bị xoá",
 };
 const SIGNATURE_LABEL: Record<string, string> = {
-  tide: "🔏 Chữ ký Tide hợp lệ",
-  invalid: "⚠️ Chữ ký Tide không hợp lệ (không được tính)",
-  unsigned: "⚠️ Không có chữ ký Tide (không được tính)",
+  tide: "Chữ ký Tide hợp lệ",
+  invalid: "Chữ ký Tide không hợp lệ (không được tính)",
+  unsigned: "Không có chữ ký Tide (không được tính)",
 };
 const KIND: Record<string, string> = { invoice: "Hoá đơn", photo: "Ảnh thực tế", receipt: "Biên bản nhận", other: "Khác" };
 
@@ -57,7 +57,11 @@ export default function ProofPage() {
         ) : (
           <p className="muted">Chưa chuyển tiền.</p>
         )}
-        {payout.recipientConfirmedAt && <p>✔ Người nhận xác nhận đã nhận lúc {when(payout.recipientConfirmedAt)}</p>}
+        {payout.recipientConfirmedAt && (
+          <p>
+            <Mark kind="ok" /> Người nhận xác nhận đã nhận lúc {when(payout.recipientConfirmedAt)}
+          </p>
+        )}
       </section>
 
       <section className="card">
@@ -68,7 +72,7 @@ export default function ProofPage() {
         <ul>
           {payout.approvals.map((a: any) => (
             <li key={a.name}>
-              {a.name} · {when(a.at)} · {SIGNATURE_LABEL[a.signature]}
+              {a.name} · {when(a.at)} · <Mark kind={a.signature === "tide" ? "lock" : "warn"} /> {SIGNATURE_LABEL[a.signature]}
             </li>
           ))}
         </ul>
@@ -96,13 +100,15 @@ export default function ProofPage() {
               <p>
                 SHA-256: <code className="hash">{e.sha256}</code>
               </p>
-              <p>{INTEGRITY[e.integrity as keyof typeof INTEGRITY]}</p>
+              <p>
+                <Mark kind={e.integrity === "ok" ? "ok" : "warn"} /> {INTEGRITY[e.integrity as keyof typeof INTEGRITY]}
+              </p>
             </div>
           </div>
         ))}
         {payout.evidenceStatus === "approved" && (
           <p>
-            ✅ Hội đồng đã duyệt minh chứng: {payout.evidenceApprovals.map((a: any) => a.name).join(", ")}
+            <Mark kind="ok" /> Hội đồng đã duyệt minh chứng: {payout.evidenceApprovals.map((a: any) => a.name).join(", ")}
           </p>
         )}
       </section>

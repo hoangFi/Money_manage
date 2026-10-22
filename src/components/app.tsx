@@ -66,7 +66,7 @@ export function LogTable({ state, entries }: { state: AppState; entries: AppStat
             <td>{nameOf(state, l.actorId)}</td>
             <td>{ACTION_LABEL[l.action] ?? l.action}</td>
             <td>
-              {l.outcome === "blocked" ? "⛔ " : "✅ "}
+              <Mark kind={l.outcome === "blocked" ? "bad" : "ok"} />{" "}
               {l.detail}
             </td>
           </tr>
@@ -129,10 +129,12 @@ export function NoticeBar({ notice, onClose }: { notice: Notice; onClose: () => 
   if (!notice) return null;
   return (
     <div className={`notice ${notice.ok ? "ok" : "blocked"}`} role="status">
-      <strong>{notice.ok ? "✅ Thành công" : "⛔ Bị chặn"}</strong>
+      <strong className="notice-title">
+        <Mark kind={notice.ok ? "ok" : "bad"} size={16} /> {notice.ok ? "Thành công" : "Bị chặn"}
+      </strong>
       <span>{notice.message}</span>
       <button className="link" onClick={onClose} aria-label="Đóng">
-        ✕
+        <Icon name="x" size={16} />
       </button>
     </div>
   );
@@ -155,7 +157,26 @@ const ICONS: Record<string, string> = {
   plus: "M12 5v14M5 12h14",
   upload: "M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
   file: "M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5",
+  alert: "M12 4 2.5 20h19zM12 10v4M12 17h.01",
+  lock: "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z",
 };
+
+const MARK: Record<string, { icon: string; className: string }> = {
+  ok: { icon: "check", className: "mark ok" },
+  bad: { icon: "x", className: "mark bad" },
+  warn: { icon: "alert", className: "mark warn" },
+  lock: { icon: "lock", className: "mark lock" },
+};
+
+/** Small status icon used inline in text, in place of emoji. */
+export function Mark({ kind, size = 14 }: { kind: keyof typeof MARK; size?: number }) {
+  const m = MARK[kind];
+  return (
+    <span className={m.className}>
+      <Icon name={m.icon} size={size} />
+    </span>
+  );
+}
 
 const THEME_KEY = "quy-chung-theme";
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { vnd, when } from "@/components/app";
+import { Mark, vnd, when } from "@/components/app";
 
 // Public reputation profile. Built only from quorum-approved payouts and evidence, so it cannot be self-declared.
 export default function OrganiserPage() {
@@ -69,7 +69,19 @@ export default function OrganiserPage() {
                 <Link href={`/proof/${h.id}`}>{h.reason}</Link>
               </td>
               <td>{vnd(h.amount)}</td>
-              <td>{h.evidenceStatus === "approved" ? "✅ Đã duyệt" : h.evidenceStatus === "submitted" ? "Chờ duyệt" : "❌ Chưa có"}</td>
+              <td>
+                {h.evidenceStatus === "approved" ? (
+                  <>
+                    <Mark kind="ok" /> Đã duyệt
+                  </>
+                ) : h.evidenceStatus === "submitted" ? (
+                  "Chờ duyệt"
+                ) : (
+                  <>
+                    <Mark kind="bad" /> Chưa có
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

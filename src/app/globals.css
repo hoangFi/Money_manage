@@ -363,3 +363,11 @@ button.seg-btn.active { background: var(--card); color: var(--text); box-shadow:
   .feed-icon { width: 36px; height: 36px; }
   .contribute input { width: 120px; }
 }
+
+/* --- Inline status icons (replace emoji) ------------------------------------ */
+.mark { display: inline-flex; vertical-align: -2px; }
+.mark.ok { color: var(--ok); }
+.mark.bad { color: var(--bad); }
+.mark.warn { color: var(--warn); }
+.mark.lock { color: var(--accent); }
+.notice-title { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }

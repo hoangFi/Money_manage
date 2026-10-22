@@ -73,7 +73,7 @@ Each fund page has a **Nhật ký** (audit log) tab listing every attempt, allow
 
 ### How the rules work
 
-- **Payouts**: proposed by any group member or by the charity organiser, executed once the quorum approves; the proposer cannot vote. Rejections need a reason. Executed payouts are reviewed under "Đã chi", where members upload invoices or photos as evidence (SHA-256 hashed, append-only).
+- **Payouts**: proposed by any group member or by the charity organiser, executed once the quorum approves; the proposer cannot vote. Rejections need a reason. Executed payouts are reviewed under "Đã chi"; only the payout's creator uploads its invoices or photos as evidence (SHA-256 hashed, append-only), and the other approvers review them.
 - **Charity**: money goes only to registered recipients; large payouts also need the recipient's confirmation; the next payout waits for approved evidence (stored with its SHA-256 hash, append-only).
 - **Refunds**: after the deadline anyone can trigger them; earlier closing needs the council quorum. The remainder is split by each donor's share and sent only to the account they paid from.
 - **Rule changes** (quorum, recipients) need the same quorum. The platform admin has no rights over money or rules.
