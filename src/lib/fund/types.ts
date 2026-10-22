@@ -7,6 +7,7 @@ export interface User {
   username: string; // matches the Tide `preferred_username`
   name: string;
   platformAdmin?: boolean;
+  account?: string; // mock bank account money is contributed from (and refunded to)
 }
 
 export interface Recipient {
@@ -30,6 +31,13 @@ export interface Fund {
     evidenceBeforeNext?: boolean; // charity: previous payout needs approved evidence
   };
   recipients: Recipient[]; // charity: only these can receive money
+  deadline?: string; // charity: after this date anyone can trigger the refund of what is left
+  closed?: {
+    at: string;
+    reason: string;
+    how: "council" | "expired";
+    refunds: { userId: string; account: string; contributed: number; amount: number }[];
+  };
 }
 
 export interface Approval {
@@ -38,6 +46,10 @@ export interface Approval {
   // The Tide-signed access token the approver presented. Tide's ORK network signs it, so this
   // server cannot mint one for a council member and fake their approval. Absent in demo mode.
   tideToken?: string;
+}
+
+export interface Rejection extends Approval {
+  reason: string;
 }
 
 export interface Evidence {
@@ -61,17 +73,20 @@ export interface Payout {
   proposerId: string;
   createdAt: string;
   approvals: Approval[];
-  status: "pending" | "awaiting_recipient" | "executed";
+  rejections: Rejection[];
+  status: "pending" | "awaiting_recipient" | "executed" | "rejected";
   recipientConfirmedAt?: string;
   executedAt?: string;
   evidence: Evidence[]; // append-only
-  evidenceStatus: "none" | "submitted" | "approved";
+  evidenceStatus: "none" | "submitted" | "approved" | "rejected";
   evidenceApprovals: Approval[];
+  evidenceRejections: Rejection[];
 }
 
 export type RuleChangeSpec =
   | { type: "set_quorum"; quorum: number }
-  | { type: "add_recipient"; name: string; account: string };
+  | { type: "add_recipient"; name: string; account: string }
+  | { type: "close_refund"; reason: string };
 
 export interface RuleChange {
   id: string;
@@ -80,7 +95,8 @@ export interface RuleChange {
   proposerId: string;
   createdAt: string;
   approvals: Approval[];
-  status: "pending" | "applied";
+  rejections: Rejection[];
+  status: "pending" | "applied" | "rejected";
 }
 
 export interface Contribution {
@@ -88,6 +104,7 @@ export interface Contribution {
   fundId: string;
   userId: string;
   amount: number;
+  fromAccount: string; // refunds can only ever go back here
   at: string;
 }
 
@@ -108,7 +125,8 @@ export interface BankTransfer {
   toName: string;
   toAccount: string;
   amount: number;
-  payoutId: string;
+  payoutId?: string;
+  refund?: boolean;
 }
 
 export interface DB {

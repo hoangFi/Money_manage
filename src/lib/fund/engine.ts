@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { verifyApprovalToken } from "../auth/tideJWT";
 import { EVIDENCE_DIR, newId } from "./store";
-import type { Approval, DB, Evidence, Fund, FundRole, Payout, RuleChange, RuleChangeSpec, User } from "./types";
+import type { Approval, DB, Evidence, Fund, FundRole, Payout, Rejection, RuleChange, RuleChangeSpec, User } from "./types";
 
 // The fund rules. Every mutation goes through here; a rule violation throws Blocked,
 // which the API logs as a blocked attempt (the "Nhật ký" screen).
@@ -74,15 +74,36 @@ function requireApprover(fund: Fund, actor: User) {
   }
 }
 
+function requireOpen(fund: Fund) {
+  if (fund.closed) block(`"${fund.name}" đã đóng và hoàn tiền cho nhà hảo tâm. Không thể thao tác thêm.`);
+}
+
+function requireUnvoted(actor: User, approvals: Approval[], rejections: Rejection[] = []) {
+  if (approvals.some((a) => a.userId === actor.id)) block("Bạn đã duyệt rồi.");
+  if (rejections.some((r) => r.userId === actor.id)) block("Bạn đã từ chối rồi.");
+}
+
+/**
+ * Records a rejection. Returns true once the quorum can no longer be reached, i.e. fewer
+ * eligible voters remain than the quorum needs. A rejection always needs a reason.
+ */
+async function reject(db: DB, rejections: Rejection[], eligible: number, quorum: number, actor: User, reason: string, tideToken?: string) {
+  if (!reason?.trim()) block("Cần ghi lý do từ chối.");
+  rejections.push({ userId: actor.id, at: now(), reason: reason.trim(), tideToken });
+  return eligible - (await countValid(db, rejections)) < quorum;
+}
+
 // --- Money in -----------------------------------------------------------
 
 export function contribute(db: DB, actor: User, fundId: string, amount: number) {
   noAdmin(actor);
   const fund = getFund(db, fundId);
+  requireOpen(fund);
   if (!Number.isInteger(amount) || amount <= 0) block("Số tiền không hợp lệ.");
   if (!roleIn(fund, actor.id)) fund.members.push({ userId: actor.id, role: "donor" });
   fund.balance += amount;
-  db.contributions.push({ id: newId("c"), fundId, userId: actor.id, amount, at: now() });
+  const fromAccount = actor.account ?? `TK của ${actor.name}`;
+  db.contributions.push({ id: newId("c"), fundId, userId: actor.id, amount, fromAccount, at: now() });
   return `Đã góp ${amount.toLocaleString("vi-VN")}đ vào "${fund.name}".`;
 }
 
@@ -105,6 +126,7 @@ export function proposePayout(
 ) {
   noAdmin(actor);
   const fund = getFund(db, input.fundId);
+  requireOpen(fund);
   const role = roleIn(fund, actor.id);
   const amount = input.amount;
   if (!Number.isInteger(amount) || amount <= 0) block("Số tiền không hợp lệ.");
@@ -145,10 +167,12 @@ export function proposePayout(
     proposerId: actor.id,
     createdAt: now(),
     approvals: [],
+    rejections: [],
     status: "pending",
     evidence: [],
     evidenceStatus: "none",
     evidenceApprovals: [],
+    evidenceRejections: [],
   };
   db.payouts.push(payout);
   return `Đã tạo lệnh chi ${amount.toLocaleString("vi-VN")}đ. Cần ${fund.rules.quorum} người duyệt.`;
@@ -160,7 +184,7 @@ export async function approvePayout(db: DB, actor: User, payoutId: string, tideT
   requireApprover(fund, actor);
   if (payout.status !== "pending") block("Lệnh chi này không còn chờ duyệt.");
   if (payout.proposerId === actor.id) block("Người tạo lệnh chi không được tự duyệt lệnh của mình.");
-  if (payout.approvals.some((a) => a.userId === actor.id)) block("Bạn đã duyệt lệnh này rồi.");
+  requireUnvoted(actor, payout.approvals, (payout.rejections ??= []));
 
   payout.approvals.push({ userId: actor.id, at: now(), tideToken });
   const valid = await countValid(db, payout.approvals);
@@ -172,6 +196,22 @@ export async function approvePayout(db: DB, actor: User, payoutId: string, tideT
     return `Đủ ${fund.rules.quorum} người duyệt. Khoản lớn: chờ người nhận xác nhận.`;
   }
   return execute(db, fund, payout);
+}
+
+export async function rejectPayout(db: DB, actor: User, payoutId: string, reason: string, tideToken?: string) {
+  const payout = getPayout(db, payoutId);
+  const fund = getFund(db, payout.fundId);
+  requireApprover(fund, actor);
+  if (payout.status !== "pending") block("Lệnh chi này không còn chờ duyệt.");
+  if (payout.proposerId === actor.id) block("Người tạo lệnh chi không bỏ phiếu cho lệnh của mình.");
+  requireUnvoted(actor, payout.approvals, (payout.rejections ??= []));
+  // The proposer cannot vote, so they are not counted among the voters who could still approve.
+  const eligible = approversOf(fund).filter((id) => id !== payout.proposerId).length;
+  if (await reject(db, payout.rejections, eligible, fund.rules.quorum, actor, reason, tideToken)) {
+    payout.status = "rejected";
+    return `Lệnh chi ${payout.amount.toLocaleString("vi-VN")}đ bị từ chối: không còn đủ người để đạt ${fund.rules.quorum} lượt duyệt.`;
+  }
+  return `Đã từ chối (${payout.rejections.length} người). Lệnh chi vẫn chờ duyệt.`;
 }
 
 export async function confirmByRecipient(db: DB, actor: User, payoutId: string) {
@@ -254,6 +294,7 @@ export function submitEvidence(
   // New evidence needs a fresh review.
   payout.evidenceStatus = "submitted";
   payout.evidenceApprovals = [];
+  payout.evidenceRejections = [];
   return `Đã nộp minh chứng. Mã băm SHA-256: ${hash.slice(0, 16)}…`;
 }
 
@@ -262,7 +303,7 @@ export async function approveEvidence(db: DB, actor: User, payoutId: string, tid
   const fund = getFund(db, payout.fundId);
   requireApprover(fund, actor);
   if (payout.evidenceStatus !== "submitted") block("Không có minh chứng nào chờ duyệt.");
-  if (payout.evidenceApprovals.some((a) => a.userId === actor.id)) block("Bạn đã duyệt minh chứng này rồi.");
+  requireUnvoted(actor, payout.evidenceApprovals, (payout.evidenceRejections ??= []));
   payout.evidenceApprovals.push({ userId: actor.id, at: now(), tideToken });
   const valid = await countValid(db, payout.evidenceApprovals);
   if (valid >= fund.rules.quorum) {
@@ -270,6 +311,19 @@ export async function approveEvidence(db: DB, actor: User, payoutId: string, tid
     return "Minh chứng đã được hội đồng duyệt. Có thể đề xuất đợt chi tiếp theo.";
   }
   return `Đã duyệt minh chứng (${valid}/${fund.rules.quorum}).`;
+}
+
+export async function rejectEvidence(db: DB, actor: User, payoutId: string, reason: string, tideToken?: string) {
+  const payout = getPayout(db, payoutId);
+  const fund = getFund(db, payout.fundId);
+  requireApprover(fund, actor);
+  if (payout.evidenceStatus !== "submitted") block("Không có minh chứng nào chờ duyệt.");
+  requireUnvoted(actor, payout.evidenceApprovals, (payout.evidenceRejections ??= []));
+  if (await reject(db, payout.evidenceRejections, approversOf(fund).length, fund.rules.quorum, actor, reason, tideToken)) {
+    payout.evidenceStatus = "rejected";
+    return "Minh chứng bị hội đồng từ chối. Người kêu gọi phải nộp minh chứng mới; đợt chi sau vẫn bị khoá.";
+  }
+  return `Đã từ chối minh chứng (${payout.evidenceRejections.length} người).`;
 }
 
 /** Recomputes each evidence file's hash and compares it with the hash recorded at submission. */
@@ -292,6 +346,7 @@ export function tamperEvidence(db: DB, payoutId: string) {
 export function proposeRuleChange(db: DB, actor: User, fundId: string, spec: RuleChangeSpec) {
   const fund = getFund(db, fundId);
   noAdmin(actor);
+  requireOpen(fund);
   const role = roleIn(fund, actor.id);
   if (!role || role === "donor" || role === "recipient") block("Bạn không có quyền đề xuất sửa luật quỹ này.");
   if (spec.type === "set_quorum") {
@@ -300,6 +355,14 @@ export function proposeRuleChange(db: DB, actor: User, fundId: string, spec: Rul
   } else if (spec.type === "add_recipient") {
     if (fund.kind !== "charity") block("Quỹ nhóm không có danh sách người nhận.");
     if (!spec.name?.trim() || !spec.account?.trim()) block("Cần tên và tài khoản người nhận.");
+  } else if (spec.type === "close_refund") {
+    if (fund.kind !== "charity") block("Chỉ chiến dịch từ thiện mới đóng và hoàn tiền.");
+    if (!spec.reason?.trim()) block("Cần ghi lý do đóng chiến dịch.");
+    if (db.ruleChanges.some((c) => c.fundId === fund.id && c.spec.type === "close_refund" && c.status === "pending")) {
+      block("Đã có một đề xuất đóng chiến dịch đang chờ duyệt.");
+    }
+  } else {
+    block("Loại đề xuất không hợp lệ.");
   }
   const change: RuleChange = {
     id: newId("rc"),
@@ -308,30 +371,106 @@ export function proposeRuleChange(db: DB, actor: User, fundId: string, spec: Rul
     proposerId: actor.id,
     createdAt: now(),
     approvals: [],
+    rejections: [],
     status: "pending",
   };
   db.ruleChanges.push(change);
-  return `Đã đề xuất sửa luật. Cần ${fund.rules.quorum} người duyệt theo luật hiện tại.`;
+  const what = spec.type === "close_refund" ? "đóng chiến dịch và hoàn tiền" : "sửa luật";
+  return `Đã đề xuất ${what}. Cần ${fund.rules.quorum} người duyệt theo luật hiện tại.`;
 }
 
 export async function approveRuleChange(db: DB, actor: User, changeId: string, tideToken?: string) {
   const change = db.ruleChanges.find((c) => c.id === changeId) ?? block("Không tìm thấy đề xuất.");
   const fund = getFund(db, change.fundId);
   requireApprover(fund, actor);
-  if (change.status !== "pending") block("Đề xuất này đã được áp dụng.");
-  if (change.approvals.some((a) => a.userId === actor.id)) block("Bạn đã duyệt đề xuất này rồi.");
+  if (change.status !== "pending") block("Đề xuất này không còn chờ duyệt.");
+  requireUnvoted(actor, change.approvals, (change.rejections ??= []));
   change.approvals.push({ userId: actor.id, at: now(), tideToken });
   const valid = await countValid(db, change.approvals);
   if (valid < fund.rules.quorum) {
     return `Đã duyệt (${valid}/${fund.rules.quorum}).`;
   }
   change.status = "applied";
+  if (change.spec.type === "close_refund") {
+    return closeAndRefund(db, fund, change.spec.reason, "council");
+  }
   if (change.spec.type === "set_quorum") {
     fund.rules.quorum = change.spec.quorum;
     return `Luật mới có hiệu lực: cần ${change.spec.quorum} người duyệt.`;
   }
   fund.recipients.push({ id: newId("r"), name: change.spec.name.trim(), account: change.spec.account.trim() });
   return `Đã thêm người nhận "${change.spec.name}".`;
+}
+
+export async function rejectRuleChange(db: DB, actor: User, changeId: string, reason: string, tideToken?: string) {
+  const change = db.ruleChanges.find((c) => c.id === changeId) ?? block("Không tìm thấy đề xuất.");
+  const fund = getFund(db, change.fundId);
+  requireApprover(fund, actor);
+  if (change.status !== "pending") block("Đề xuất này không còn chờ duyệt.");
+  requireUnvoted(actor, change.approvals, (change.rejections ??= []));
+  if (await reject(db, change.rejections, approversOf(fund).length, fund.rules.quorum, actor, reason, tideToken)) {
+    change.status = "rejected";
+    return "Đề xuất bị từ chối: không còn đủ người để đạt quorum.";
+  }
+  return `Đã từ chối đề xuất (${change.rejections.length} người).`;
+}
+
+// --- Closing a campaign and refunding donors ---------------------------------
+// What is left goes back to donors in proportion to what each gave, and ONLY to the
+// account each contribution came from. No input anywhere names a refund account, so
+// nobody (organiser, council, admin) can redirect a refund.
+
+function closeAndRefund(db: DB, fund: Fund, reason: string, how: "council" | "expired") {
+  requireOpen(fund);
+  const byDonor = new Map<string, { userId: string; account: string; contributed: number; amount: number }>();
+  for (const c of db.contributions.filter((c) => c.fundId === fund.id)) {
+    const key = `${c.userId}|${c.fromAccount}`;
+    const row = byDonor.get(key) ?? { userId: c.userId, account: c.fromAccount, contributed: 0, amount: 0 };
+    row.contributed += c.amount;
+    byDonor.set(key, row);
+  }
+  const refunds = [...byDonor.values()];
+  const raised = refunds.reduce((s, r) => s + r.contributed, 0);
+  const left = Math.min(fund.balance, raised);
+  if (left > 0) {
+    // BigInt: balance × contribution can exceed Number's exact integer range.
+    for (const r of refunds) r.amount = Number((BigInt(left) * BigInt(r.contributed)) / BigInt(raised));
+    // Rounding leaves a few đồng; they go to the largest donor, so nothing stays behind.
+    const largest = refunds.reduce((a, b) => (b.contributed > a.contributed ? b : a));
+    largest.amount += left - refunds.reduce((s, r) => s + r.amount, 0);
+  }
+
+  const at = now();
+  for (const r of refunds.filter((r) => r.amount > 0)) {
+    const user = db.users.find((u) => u.id === r.userId);
+    db.bank.push({ id: newId("t"), at, fromFund: fund.id, toName: user?.name ?? r.userId, toAccount: r.account, amount: r.amount, refund: true });
+  }
+  for (const p of db.payouts.filter((p) => p.fundId === fund.id && (p.status === "pending" || p.status === "awaiting_recipient"))) {
+    p.status = "rejected";
+  }
+  fund.balance -= left;
+  fund.closed = { at, reason, how, refunds };
+  return `Đã đóng "${fund.name}" và hoàn ${left.toLocaleString("vi-VN")}đ cho ${refunds.length} nhà hảo tâm, theo tỷ lệ đã góp, về đúng tài khoản đã góp.`;
+}
+
+/** After the deadline anyone can trigger the refund: the rule decides, not a person. */
+export function refundExpired(db: DB, actor: User, fundId: string) {
+  noAdmin(actor);
+  const fund = getFund(db, fundId);
+  if (fund.kind !== "charity" || !fund.deadline) block("Quỹ này không có hạn chiến dịch.");
+  if (new Date(fund.deadline) > new Date()) {
+    block(`Chiến dịch chưa hết hạn (${new Date(fund.deadline).toLocaleDateString("vi-VN")}). Muốn đóng sớm phải được hội đồng duyệt.`);
+  }
+  return closeAndRefund(db, fund, "Hết hạn chiến dịch", "expired");
+}
+
+/** Never allowed: refunds go back to the account each contribution came from. */
+export function refundTo(db: DB, actor: User, fundId: string, toAccount: string): never {
+  const fund = getFund(db, fundId);
+  block(
+    `Không ai được chuyển tiền hoàn của "${fund.name}" về ${toAccount || "tài khoản khác"}. ` +
+      `Tiền hoàn chỉ trả về đúng tài khoản mà từng nhà hảo tâm đã dùng để góp.`
+  );
 }
 
 // --- Reputation -----------------------------------------------------------

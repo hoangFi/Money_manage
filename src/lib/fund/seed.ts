@@ -17,8 +17,8 @@ export function seed(): DB {
     { id: "u-phuc", username: "phuc", name: "Phúc (hội đồng)" },
     { id: "u-minhphat", username: "minhphat", name: "Cửa hàng VLXD Minh Phát" },
     { id: "u-hieutruong", username: "hieutruong", name: "Thầy Tùng (hiệu trưởng)" },
-    { id: "u-donor1", username: "donor1", name: "Nhà hảo tâm Quang" },
-    { id: "u-donor2", username: "donor2", name: "Nhà hảo tâm Thảo" },
+    { id: "u-donor1", username: "donor1", name: "Nhà hảo tâm Quang", account: "MB 0901 234 567" },
+    { id: "u-donor2", username: "donor2", name: "Nhà hảo tâm Thảo", account: "ACB 1122 3344" },
 
     { id: "u-admin", username: "admin", name: "Admin nền tảng", platformAdmin: true },
   ];
@@ -49,6 +49,7 @@ export function seed(): DB {
         description: "Điểm trường bị lũ cuốn. Mục tiêu 200 triệu để xây lại 2 phòng học.",
         balance: 0,
         goal: 200_000_000,
+        deadline: "2026-12-31T23:59:59+07:00",
         members: [
           { userId: "u-lan", role: "organiser" },
           { userId: "u-hoa", role: "council" },

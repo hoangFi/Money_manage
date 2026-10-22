@@ -28,6 +28,54 @@ export const ROLE_LABEL: Record<string, string> = {
   donor: "Nhà hảo tâm",
 };
 
+export const ACTION_LABEL: Record<string, string> = {
+  contribute: "Góp tiền",
+  withdraw: "Rút thẳng",
+  propose_payout: "Tạo lệnh chi",
+  approve_payout: "Duyệt lệnh chi",
+  reject_payout: "Từ chối lệnh chi",
+  confirm_receipt: "Người nhận xác nhận",
+  submit_evidence: "Nộp minh chứng",
+  approve_evidence: "Duyệt minh chứng",
+  reject_evidence: "Từ chối minh chứng",
+  propose_rule: "Đề xuất sửa luật / đóng quỹ",
+  approve_rule: "Duyệt đề xuất",
+  reject_rule: "Từ chối đề xuất",
+  refund_expired: "Hoàn tiền khi hết hạn",
+  refund_to: "Hoàn tiền về tài khoản khác",
+  tamper_evidence: "Sửa file minh chứng",
+};
+
+/** Audit log table; pass the entries already filtered (e.g. to one fund). */
+export function LogTable({ state, entries }: { state: AppState; entries: AppState["log"] }) {
+  if (entries.length === 0) return <p className="muted">Chưa có hoạt động nào.</p>;
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Lúc</th>
+          <th>Ai</th>
+          <th>Làm gì</th>
+          <th>Kết quả</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map((l) => (
+          <tr key={l.id} className={l.outcome}>
+            <td>{when(l.at)}</td>
+            <td>{nameOf(state, l.actorId)}</td>
+            <td>{ACTION_LABEL[l.action] ?? l.action}</td>
+            <td>
+              {l.outcome === "blocked" ? "⛔ " : "✅ "}
+              {l.detail}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 type Notice = { ok: boolean; message: string } | null;
 
 /** Loads /api/state and runs actions, reporting allowed/blocked results as a notice. */
@@ -191,9 +239,6 @@ export function Sidebar() {
       <nav>
         <NavLink href="/" icon="home">
           Tổng quan
-        </NavLink>
-        <NavLink href="/log" icon="log">
-          Nhật ký
         </NavLink>
         {state && (
           <>

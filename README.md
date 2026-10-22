@@ -62,5 +62,14 @@ npm run dev
 | 7 | Lan | Pay 80M to Minh Phát; Hoa, Khoa, Minh approve; Minh Phát confirms | Executed |
 | 8 | Lan | Propose a second payout | Blocked until evidence approved |
 | 9 | Lan, then council | Upload invoice; 3 approve | Next payout unlocked |
+| 10 | Any approver | Reject a payout with a reason | Rejected once quorum is out of reach |
+| 11 | Lan | Send the campaign's refund to her own account | Blocked |
+| 12 | Council | Propose closing; 3 approve | Balance refunded pro rata, only to each donor's own account |
+
+Each fund page has its own **Nhật ký** (audit log) tab: every attempt, allowed or blocked.
+
+### Status of Tide licensing
+
+Tide sign-in, DPoP-verified APIs and Tide-signed approvals are implemented. During the hackathon, Tide's licensing service returned `TIDE-IDPEXT-VENDOR-KEYGEN_FAILED` (`Midgard.FinalizeWallet` 500) for several teams, which Tide support is investigating, so the demo video uses demo mode.
 
 Data is synthetic and the bank is mocked.

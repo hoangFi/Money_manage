@@ -174,9 +174,24 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 .task:hover { background: var(--hover); }
 .task b, .task small { display: block; }
 .dot { width: 10px; height: 10px; border-radius: 99px; background: var(--accent); flex: none; box-shadow: 0 0 0 5px var(--accent-soft); }
-.log-line { margin: 0; }
+.log-line { margin: 0; display: block; color: inherit; text-decoration: none; }
+.log-line:hover { text-decoration: underline; }
 
 /* --- Fund page ------------------------------------------------------------- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 20px 0 16px; overflow-x: auto; }
+.tab {
+  background: none; color: var(--muted); border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: 10px 14px; font-weight: 600; white-space: nowrap;
+}
+.tab:hover { color: var(--text); filter: none; }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.count { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--hover); color: var(--muted); }
+.count.bad { background: var(--bad-bg); color: var(--bad); }
+.votes { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; font-size: 14px; }
+.stack-sm { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+button.bad-outline { color: var(--bad); border-color: var(--bad-bg); }
+button.bad-outline:hover { background: var(--bad-bg); }
+.payout.rejected { border-left: 4px solid var(--bad); opacity: .8; }
 .cols { display: grid; grid-template-columns: 1fr 380px; gap: 16px; margin-top: 12px; }
 .payout.executed { border-left: 4px solid var(--ok); }
 .payout.pending, .payout.awaiting_recipient { border-left: 4px solid var(--warn); }

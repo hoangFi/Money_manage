@@ -17,6 +17,16 @@ async function run(db: DB, actor: User, body: Body, file?: File, tideToken?: str
       return engine.proposePayout(db, actor, { ...body, amount: Number(body.amount) } as any);
     case "approve_payout":
       return engine.approvePayout(db, actor, body.payoutId, tideToken);
+    case "reject_payout":
+      return engine.rejectPayout(db, actor, body.payoutId, body.reason, tideToken);
+    case "reject_evidence":
+      return engine.rejectEvidence(db, actor, body.payoutId, body.reason, tideToken);
+    case "reject_rule":
+      return engine.rejectRuleChange(db, actor, body.changeId, body.reason, tideToken);
+    case "refund_expired":
+      return engine.refundExpired(db, actor, body.fundId);
+    case "refund_to":
+      return engine.refundTo(db, actor, body.fundId, body.toAccount);
     case "confirm_receipt":
       return engine.confirmByRecipient(db, actor, body.payoutId);
     case "submit_evidence": {

@@ -2,25 +2,34 @@
 
 import Link from "next/link";
 import { AppState, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
-import type { Payout } from "@/lib/fund/types";
 
 /** What is waiting on the current user: approvals, evidence reviews, receipt confirmations. */
 function todo(state: AppState) {
   const me = state.me.id;
-  const items: { payout: Payout; label: string }[] = [];
+  const items: { fundId: string; label: string; detail: string }[] = [];
+  const isApprover = (fundId: string) => {
+    const fund = state.funds.find((f) => f.id === fundId)!;
+    const role = roleOf(fund, me);
+    return fund.kind === "group" ? role === "treasurer" || role === "member" : role === "council";
+  };
+  const voted = (lists: ({ userId: string }[] | undefined)[]) => lists.some((l) => l?.some((v) => v.userId === me));
   for (const p of state.payouts) {
     const fund = state.funds.find((f) => f.id === p.fundId)!;
-    const role = roleOf(fund, me);
-    const approver = fund.kind === "group" ? role === "treasurer" || role === "member" : role === "council";
-    if (approver && p.status === "pending" && p.proposerId !== me && !p.approvals.some((a) => a.userId === me)) {
-      items.push({ payout: p, label: `Duyệt lệnh chi ${vnd(p.amount)}` });
+    if (isApprover(p.fundId) && p.status === "pending" && p.proposerId !== me && !voted([p.approvals, p.rejections])) {
+      items.push({ fundId: p.fundId, label: `Duyệt lệnh chi ${vnd(p.amount)}`, detail: p.reason });
     }
-    if (approver && p.evidenceStatus === "submitted" && !p.evidenceApprovals.some((a) => a.userId === me)) {
-      items.push({ payout: p, label: "Duyệt minh chứng" });
+    if (isApprover(p.fundId) && p.evidenceStatus === "submitted" && !voted([p.evidenceApprovals, p.evidenceRejections])) {
+      items.push({ fundId: p.fundId, label: "Duyệt minh chứng", detail: p.reason });
     }
     const recipient = fund.recipients.find((r) => r.id === p.recipientId);
     if (p.status === "awaiting_recipient" && recipient?.userId === me) {
-      items.push({ payout: p, label: `Xác nhận đã nhận ${vnd(p.amount)}` });
+      items.push({ fundId: p.fundId, label: `Xác nhận đã nhận ${vnd(p.amount)}`, detail: p.reason });
+    }
+  }
+  for (const c of state.ruleChanges) {
+    if (isApprover(c.fundId) && c.status === "pending" && !voted([c.approvals, c.rejections])) {
+      const label = c.spec.type === "close_refund" ? "Duyệt đóng chiến dịch và hoàn tiền" : "Duyệt đề xuất sửa luật";
+      items.push({ fundId: c.fundId, label, detail: state.funds.find((f) => f.id === c.fundId)!.name });
     }
   }
   return items;
@@ -33,7 +42,7 @@ function Home() {
   const groups = state.funds.filter((f) => f.kind === "group");
   const charities = state.funds.filter((f) => f.kind === "charity");
   const total = state.funds.reduce((s, f) => s + f.balance, 0);
-  const pending = state.payouts.filter((p) => p.status !== "executed").length;
+  const pending = state.payouts.filter((p) => p.status === "pending" || p.status === "awaiting_recipient").length;
   const blocked = state.log.filter((l) => l.outcome === "blocked");
   const tasks = todo(state);
 
@@ -84,11 +93,11 @@ function Home() {
           {tasks.length === 0 && <p className="muted">Không có việc nào chờ bạn.</p>}
           <div className="stack">
             {tasks.slice(0, 4).map((t, i) => (
-              <Link key={i} href={`/funds/${t.payout.fundId}`} className="task">
+              <Link key={i} href={`/funds/${t.fundId}`} className="task">
                 <span className="dot" />
                 <span>
                   <b>{t.label}</b>
-                  <small className="muted">{t.payout.reason}</small>
+                  <small className="muted">{t.detail}</small>
                 </span>
               </Link>
             ))}
@@ -107,11 +116,14 @@ function Home() {
             <span>lần thử vượt quyền bị chặn</span>
           </div>
           <div className="stack">
-            {blocked.slice(0, 3).map((l) => (
-              <p key={l.id} className="log-line">
-                ⛔ <b>{nameOf(state, l.actorId)}</b> <small className="muted">{when(l.at)}</small>
-              </p>
-            ))}
+            {blocked.slice(0, 3).map((l) => {
+              const fund = state.funds.find((f) => f.id === l.fundId);
+              return (
+                <Link key={l.id} href={fund ? `/funds/${fund.id}#log` : "/log"} className="log-line">
+                  ⛔ <b>{nameOf(state, l.actorId)}</b> · {fund?.name ?? ""} <small className="muted">{when(l.at)}</small>
+                </Link>
+              );
+            })}
           </div>
         </section>
       </div>

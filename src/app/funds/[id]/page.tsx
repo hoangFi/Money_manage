@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
-import { AppState, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
-import type { Fund, Payout, RuleChange } from "@/lib/fund/types";
+import { useEffect, useState } from "react";
+import { AppState, LogTable, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import type { Approval, Fund, Payout, Rejection, RuleChange } from "@/lib/fund/types";
 
 type Act = (body: Record<string, unknown> | FormData) => Promise<boolean>;
 
@@ -12,12 +12,51 @@ const STATUS: Record<Payout["status"], string> = {
   pending: "Chờ duyệt",
   awaiting_recipient: "Chờ người nhận xác nhận",
   executed: "Đã chuyển tiền",
+  rejected: "Bị từ chối",
 };
 const EVIDENCE: Record<Payout["evidenceStatus"], string> = {
   none: "Chưa có minh chứng",
   submitted: "Minh chứng chờ hội đồng duyệt",
   approved: "Minh chứng đã duyệt",
+  rejected: "Minh chứng bị từ chối, cần nộp lại",
 };
+
+/** Asks for the reason a rejection must carry; null if the user cancels. */
+function askReason(what: string) {
+  const reason = window.prompt(`Lý do từ chối ${what}:`);
+  return reason?.trim() ? reason.trim() : null;
+}
+
+/** Who approved and who rejected, with each rejection's reason. */
+function Votes({ state, approvals, rejections, quorum }: { state: AppState; approvals: Approval[]; rejections?: Rejection[]; quorum: number }) {
+  return (
+    <div className="votes">
+      <span>
+        ✅ Duyệt {approvals.length}/{quorum}
+        {approvals.length > 0 && <>: {approvals.map((a) => nameOf(state, a.userId)).join(", ")}</>}
+      </span>
+      {rejections?.map((r) => (
+        <span key={r.userId} className="bad">
+          ❌ {nameOf(state, r.userId)} từ chối: “{r.reason}”
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Approve and reject buttons for whoever may vote (the server enforces who that is). */
+function VoteButtons({ onApprove, onReject, approveLabel = "Duyệt" }: { onApprove: () => void; onReject: () => void; approveLabel?: string }) {
+  return (
+    <>
+      <button className="small" onClick={onApprove}>
+        {approveLabel}
+      </button>
+      <button className="small ghost bad-outline" onClick={onReject}>
+        Từ chối
+      </button>
+    </>
+  );
+}
 
 function Contribute({ fund, act }: { fund: Fund; act: Act }) {
   const [amount, setAmount] = useState("500000");
@@ -170,14 +209,19 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
         Chi cho <b>{recipient ? `${recipient.name} (${recipient.account})` : payout.payee}</b> · đề xuất bởi {nameOf(state, payout.proposerId)} ·{" "}
         {when(payout.createdAt)}
       </p>
-      <p>
-        Đã duyệt {payout.approvals.length}/{fund.rules.quorum}
-        {payout.approvals.length > 0 && <>: {payout.approvals.map((a) => nameOf(state, a.userId)).join(", ")}</>}
-      </p>
+      <Votes state={state} approvals={payout.approvals} rejections={payout.rejections} quorum={fund.rules.quorum} />
       {payout.recipientConfirmedAt && <p>✔ Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}</p>}
 
       <div className="row">
-        {payout.status === "pending" && <button onClick={() => act({ action: "approve_payout", payoutId: payout.id })}>Duyệt</button>}
+        {payout.status === "pending" && (
+          <VoteButtons
+            onApprove={() => act({ action: "approve_payout", payoutId: payout.id })}
+            onReject={() => {
+              const reason = askReason("lệnh chi này");
+              if (reason) act({ action: "reject_payout", payoutId: payout.id, reason });
+            }}
+          />
+        )}
         {(payout.status === "awaiting_recipient" || (iAmRecipient && payout.status === "pending")) && (
           <button onClick={() => act({ action: "confirm_receipt", payoutId: payout.id })}>Người nhận xác nhận</button>
         )}
@@ -188,8 +232,10 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
         <div className="evidence">
           <p>
             <b>{EVIDENCE[payout.evidenceStatus]}</b>
-            {payout.evidenceStatus === "submitted" && ` (${payout.evidenceApprovals.length}/${fund.rules.quorum})`}
           </p>
+          {payout.evidenceStatus !== "none" && (
+            <Votes state={state} approvals={payout.evidenceApprovals} rejections={payout.evidenceRejections} quorum={fund.rules.quorum} />
+          )}
           {payout.evidence.length > 0 && (
             <ul>
               {payout.evidence.map((e) => (
@@ -204,7 +250,14 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
           )}
           <div className="row">
             {payout.evidenceStatus === "submitted" && (
-              <button onClick={() => act({ action: "approve_evidence", payoutId: payout.id })}>Duyệt minh chứng</button>
+              <VoteButtons
+                approveLabel="Duyệt minh chứng"
+                onApprove={() => act({ action: "approve_evidence", payoutId: payout.id })}
+                onReject={() => {
+                  const reason = askReason("minh chứng này");
+                  if (reason) act({ action: "reject_evidence", payoutId: payout.id, reason });
+                }}
+              />
             )}
             {payout.evidence.length > 0 && state.me.platformAdmin && (
               <button className="danger" onClick={() => act({ action: "tamper_evidence", payoutId: payout.id })}>
@@ -224,7 +277,12 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
   const [name, setName] = useState("");
   const [account, setAccount] = useState("");
   const describe = (c: RuleChange) =>
-    c.spec.type === "set_quorum" ? `Đổi quorum thành ${c.spec.quorum}` : `Thêm người nhận "${c.spec.name}" (${c.spec.account})`;
+    c.spec.type === "set_quorum"
+      ? `Đổi quorum thành ${c.spec.quorum}`
+      : c.spec.type === "add_recipient"
+        ? `Thêm người nhận "${c.spec.name}" (${c.spec.account})`
+        : `Đóng chiến dịch và hoàn tiền: ${c.spec.reason}`;
+  const STATUS_LABEL = { applied: "✅ đã áp dụng", rejected: "❌ bị từ chối" } as Record<string, string>;
   return (
     <section className="card">
       <h3>Luật quỹ</h3>
@@ -240,15 +298,24 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
 
       {changes.length > 0 && (
         <>
-          <h4>Đề xuất sửa luật</h4>
+          <h4>Đề xuất</h4>
           <ul>
             {changes.map((c) => (
-              <li key={c.id}>
-                {describe(c)} · {nameOf(state, c.proposerId)} · {c.status === "applied" ? "✅ đã áp dụng" : `${c.approvals.length}/${fund.rules.quorum} duyệt`}{" "}
+              <li key={c.id} className="stack-sm">
+                <span>
+                  {describe(c)} · {nameOf(state, c.proposerId)} {STATUS_LABEL[c.status] && <>· {STATUS_LABEL[c.status]}</>}
+                </span>
+                <Votes state={state} approvals={c.approvals} rejections={c.rejections} quorum={fund.rules.quorum} />
                 {c.status === "pending" && (
-                  <button className="small" onClick={() => act({ action: "approve_rule", changeId: c.id })}>
-                    Duyệt
-                  </button>
+                  <div className="row">
+                    <VoteButtons
+                      onApprove={() => act({ action: "approve_rule", changeId: c.id })}
+                      onReject={() => {
+                        const reason = askReason("đề xuất này");
+                        if (reason) act({ action: "reject_rule", changeId: c.id, reason });
+                      }}
+                    />
+                  </div>
                 )}
               </li>
             ))}
@@ -286,8 +353,128 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
   );
 }
 
+function RefundTo({ fund, act }: { fund: Fund; act: Act }) {
+  const [account, setAccount] = useState("Techcombank 1903 xxxx (Lan)");
+  return (
+    <form
+      className="row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        act({ action: "refund_to", fundId: fund.id, toAccount: account });
+      }}
+    >
+      <input value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Tài khoản nhận tiền hoàn" />
+      <button className="danger">Chuyển tiền hoàn về tài khoản này</button>
+    </form>
+  );
+}
+
+/** Closing a charity campaign: by council quorum, or by anyone once the deadline has passed. */
+function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: RuleChange[]; state: AppState; act: Act }) {
+  const [reason, setReason] = useState("Người kêu gọi không nộp minh chứng, mất liên lạc");
+  if (fund.closed) {
+    const total = fund.closed.refunds.reduce((s, r) => s + r.amount, 0);
+    return (
+      <section className="card">
+        <h3>Chiến dịch đã đóng · đã hoàn {vnd(total)}</h3>
+        <p className="muted">
+          {when(fund.closed.at)} · {fund.closed.how === "expired" ? "Tự động khi hết hạn" : "Hội đồng duyệt đóng"} · Lý do: {fund.closed.reason}
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Nhà hảo tâm</th>
+              <th>Đã góp</th>
+              <th>Được hoàn</th>
+              <th>Về tài khoản đã góp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fund.closed.refunds.map((r) => (
+              <tr key={`${r.userId}-${r.account}`}>
+                <td>{nameOf(state, r.userId)}</td>
+                <td>{vnd(r.contributed)}</td>
+                <td>
+                  <b>{vnd(r.amount)}</b>
+                </td>
+                <td>{r.account}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    );
+  }
+
+  const expired = !!fund.deadline && new Date(fund.deadline) <= new Date();
+  return (
+    <section className="card">
+      <h3>Đóng chiến dịch và hoàn tiền</h3>
+      <ul>
+        <li>
+          Hạn chiến dịch: <b>{fund.deadline ? new Date(fund.deadline).toLocaleDateString("vi-VN") : "không có"}</b>. Hết hạn thì ai cũng bấm hoàn tiền được, không
+          cần ai duyệt.
+        </li>
+        <li>Đóng sớm cần {fund.rules.quorum} thành viên hội đồng duyệt.</li>
+        <li>Số dư còn lại được hoàn theo tỷ lệ mỗi người đã góp, và chỉ về đúng tài khoản đã góp.</li>
+      </ul>
+      {changes.length > 0 && (
+        <ul>
+          {changes.map((c) => (
+            <li key={c.id} className="stack-sm">
+              <span>
+                “{c.spec.type === "close_refund" && c.spec.reason}” · đề xuất bởi {nameOf(state, c.proposerId)}
+                {c.status === "rejected" && " · ❌ bị từ chối"}
+              </span>
+              <Votes state={state} approvals={c.approvals} rejections={c.rejections} quorum={fund.rules.quorum} />
+              {c.status === "pending" && (
+                <div className="row">
+                  <VoteButtons
+                    approveLabel="Duyệt đóng và hoàn tiền"
+                    onApprove={() => act({ action: "approve_rule", changeId: c.id })}
+                    onReject={() => {
+                      const reason = askReason("việc đóng chiến dịch");
+                      if (reason) act({ action: "reject_rule", changeId: c.id, reason });
+                    }}
+                  />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          act({ action: "propose_rule", fundId: fund.id, spec: { type: "close_refund", reason } });
+        }}
+      >
+        <input value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Lý do đóng chiến dịch" />
+        <button>Đề xuất đóng và hoàn tiền</button>
+      </form>
+      <button className={expired ? "" : "ghost"} onClick={() => act({ action: "refund_expired", fundId: fund.id })}>
+        Hoàn tiền vì hết hạn
+      </button>
+    </section>
+  );
+}
+
+const TABS = [
+  ["payouts", "Khoản chi"],
+  ["log", "Nhật ký"],
+  ["rules", "Luật và thành viên"],
+] as const;
+type Tab = (typeof TABS)[number][0];
+
 function FundView({ id }: { id: string }) {
   const { state, error, notice, setNotice, act } = useAppState();
+  const [tab, setTab] = useState<Tab>("payouts");
+  // A link to /funds/<id>#log opens the log tab.
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (TABS.some(([t]) => t === hash)) setTab(hash as Tab);
+  }, []);
   if (error) return <p className="error">{error}</p>;
   if (!state) return <p className="muted">Đang tải…</p>;
   const fund = state.funds.find((f) => f.id === id);
@@ -297,14 +484,18 @@ function FundView({ id }: { id: string }) {
   const payouts = state.payouts.filter((p) => p.fundId === fund.id).reverse();
   const organiser = fund.members.find((m) => m.role === "organiser");
   const raised = state.contributions.filter((c) => c.fundId === fund.id).reduce((s, c) => s + c.amount, 0);
+  const changes = state.ruleChanges.filter((c) => c.fundId === fund.id);
+  const log = state.log.filter((l) => l.fundId === fund.id);
+  const blocked = log.filter((l) => l.outcome === "blocked").length;
 
   return (
     <>
       <NoticeBar notice={notice} onClose={() => setNotice(null)} />
-      <Link href="/">← Tất cả quỹ</Link>
       <section className="card hero">
         <span className="tag">{fund.kind === "group" ? "Quỹ nhóm" : "Chiến dịch từ thiện"}</span>
-        <h2>{fund.name}</h2>
+        <h2>
+          {fund.name} {fund.closed && <span className="pill">Đã đóng · đã hoàn tiền</span>}
+        </h2>
         <p className="muted">{fund.description}</p>
         <p className="big">Số dư: {vnd(fund.balance)}</p>
         {fund.goal && (
@@ -321,52 +512,85 @@ function FundView({ id }: { id: string }) {
             </>
           )}
         </p>
-        <Contribute fund={fund} act={act} />
+        {!fund.closed && <Contribute fund={fund} act={act} />}
       </section>
 
-      <div className="cols">
-        <div>
-          <h3>Các khoản chi</h3>
-          {payouts.length === 0 && <p className="muted">Chưa có khoản chi nào.</p>}
-          {payouts.map((p) => (
-            <PayoutCard key={p.id} fund={fund} payout={p} state={state} act={act} />
-          ))}
+      <div className="tabs" role="tablist">
+        {TABS.map(([t, label]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "tab active" : "tab"} onClick={() => setTab(t)}>
+            {label}
+            {t === "payouts" && <span className="count">{payouts.length}</span>}
+            {t === "log" && <span className={blocked ? "count bad" : "count"}>{blocked ? `${blocked} bị chặn` : log.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "payouts" && (
+        <div className="cols">
+          <div>
+            {payouts.length === 0 && <p className="muted">Chưa có khoản chi nào.</p>}
+            {payouts.map((p) => (
+              <PayoutCard key={p.id} fund={fund} payout={p} state={state} act={act} />
+            ))}
+          </div>
+          <aside>
+            {!fund.closed && (
+              <section className="card">
+                <h3>{fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}</h3>
+                <Propose fund={fund} act={act} />
+              </section>
+            )}
+            {fund.kind === "charity" && (
+              <CloseCampaign fund={fund} changes={changes.filter((c) => c.spec.type === "close_refund")} state={state} act={act} />
+            )}
+            <section className="card warn">
+              <h3>Thử vượt quyền</h3>
+              <p className="muted">Ai thử cũng bị chặn, kể cả thủ quỹ, người kêu gọi và admin. Mọi lần thử đều vào nhật ký.</p>
+              <Withdraw fund={fund} act={act} />
+              {fund.kind === "charity" && <RefundTo fund={fund} act={act} />}
+            </section>
+          </aside>
         </div>
-        <aside>
-          <section className="card">
-            <h3>{fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}</h3>
-            <Propose fund={fund} act={act} />
-          </section>
-          <section className="card warn">
-            <h3>Thử vượt quyền</h3>
-            <p className="muted">Rút tiền thẳng, không qua duyệt. Ai thử cũng bị chặn, kể cả thủ quỹ, người kêu gọi và admin.</p>
-            <Withdraw fund={fund} act={act} />
-          </section>
-          {fund.kind === "charity" && (
+      )}
+
+      {tab === "log" && (
+        <>
+          <p className="muted">
+            Nhật ký của riêng quỹ này: {log.length} hoạt động, {blocked} lần thử vượt quyền bị chặn.
+          </p>
+          <LogTable state={state} entries={log} />
+        </>
+      )}
+
+      {tab === "rules" && (
+        <div className="cols">
+          <RuleChanges fund={fund} changes={changes.filter((c) => c.spec.type !== "close_refund")} state={state} act={act} />
+          <aside>
+            {fund.kind === "charity" && (
+              <section className="card">
+                <h3>Người nhận đã đăng ký</h3>
+                <ul>
+                  {fund.recipients.map((r) => (
+                    <li key={r.id}>
+                      {r.name} · {r.account}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <section className="card">
-              <h3>Người nhận đã đăng ký</h3>
+              <h3>Thành viên</h3>
               <ul>
-                {fund.recipients.map((r) => (
-                  <li key={r.id}>
-                    {r.name} · {r.account}
+                {fund.members.map((m) => (
+                  <li key={m.userId}>
+                    {nameOf(state, m.userId)} · {ROLE_LABEL[m.role]}
                   </li>
                 ))}
               </ul>
             </section>
-          )}
-          <RuleChanges fund={fund} changes={state.ruleChanges.filter((c) => c.fundId === fund.id)} state={state} act={act} />
-          <section className="card">
-            <h3>Thành viên</h3>
-            <ul>
-              {fund.members.map((m) => (
-                <li key={m.userId}>
-                  {nameOf(state, m.userId)} · {ROLE_LABEL[m.role]}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
-      </div>
+          </aside>
+        </div>
+      )}
     </>
   );
 }
