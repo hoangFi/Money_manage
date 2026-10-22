@@ -57,7 +57,7 @@ npm run dev
 | Step | Act as | Action | Expected |
 |---|---|---|---|
 | 1 | An (treasurer) | Withdraw 10M from "Du lịch Đà Lạt" | Blocked |
-| 2 | An | Create a 3M payout | Pending 0/3 |
+| 2 | An (or any member) | Create a 3M payout | Pending 0/3 |
 | 3 | Admin | Approve it | Blocked |
 | 4 | Bình, Chi, Dũng | Approve | Executed |
 | 5 | Chi, Dũng | Reject another payout, with a reason | Rejected once quorum is out of reach |
@@ -74,7 +74,7 @@ Each fund page has a **Nhật ký** (audit log) tab listing every attempt, allow
 
 ### How the rules work
 
-- **Payouts**: proposed by the treasurer or organiser, executed once the quorum approves; the proposer cannot vote. Rejections need a reason.
+- **Payouts**: proposed by any group member or by the charity organiser, executed once the quorum approves; the proposer cannot vote. Rejections need a reason. Executed payouts are reviewed under "Đã chi", where members upload invoices or photos as evidence (SHA-256 hashed, append-only).
 - **Charity**: money goes only to registered recipients; large payouts also need the recipient's confirmation; the next payout waits for approved evidence (stored with its SHA-256 hash, append-only).
 - **Refunds**: after the deadline anyone can trigger them; earlier closing needs the council quorum. The remainder is split by each donor's share and sent only to the account they paid from.
 - **Rule changes** (quorum, recipients) need the same quorum. The platform admin has no rights over money or rules.

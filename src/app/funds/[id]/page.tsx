@@ -239,28 +239,39 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
         {(payout.status === "awaiting_recipient" || (iAmRecipient && payout.status === "pending")) && (
           <button onClick={() => act({ action: "confirm_receipt", payoutId: payout.id })}>Người nhận xác nhận</button>
         )}
-        {payout.status === "executed" && <Link href={`/proof/${payout.id}`}>Trang minh chứng công khai →</Link>}
+        {payout.status === "executed" && <Link href={`/proof/${payout.id}`}>Xem lại lệnh chi và minh chứng →</Link>}
       </div>
 
-      {fund.kind === "charity" && payout.status === "executed" && (
+      {payout.status === "executed" && (
         <div className="evidence">
           <p>
-            <b>{EVIDENCE[payout.evidenceStatus]}</b>
+            <b>{fund.kind === "group" ? EVIDENCE[payout.evidenceStatus].replace("hội đồng", "thành viên") : EVIDENCE[payout.evidenceStatus]}</b>
+            {fund.kind === "group" && payout.evidenceStatus === "none" && (
+              <span className="muted"> · tải hoá đơn hoặc ảnh để cả nhóm xem lại</span>
+            )}
           </p>
           {payout.evidenceStatus !== "none" && (
             <Votes state={state} approvals={payout.evidenceApprovals} rejections={payout.evidenceRejections} quorum={fund.rules.quorum} />
           )}
           {payout.evidence.length > 0 && (
-            <ul>
+            <div className="evidence-grid">
               {payout.evidence.map((e) => (
-                <li key={e.id}>
-                  <a href={`/api/public/evidence/${e.id}`} target="_blank" rel="noreferrer">
-                    {e.fileName}
-                  </a>{" "}
-                  · {e.note} · <code>{e.sha256.slice(0, 12)}…</code>
-                </li>
+                <a key={e.id} className="evidence-thumb" href={`/api/public/evidence/${e.id}`} target="_blank" rel="noreferrer">
+                  {/\.(png|jpe?g|webp|gif)$/i.test(e.fileName) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/public/evidence/${e.id}`} alt={e.note || e.fileName} />
+                  ) : (
+                    <span className="file-icon">{e.fileName.split(".").pop()?.toUpperCase()}</span>
+                  )}
+                  <span>
+                    <b>{e.note || e.fileName}</b>
+                    <small className="muted">
+                      {nameOf(state, e.submittedBy)} · {when(e.submittedAt)} · <code>{e.sha256.slice(0, 10)}…</code>
+                    </small>
+                  </span>
+                </a>
               ))}
-            </ul>
+            </div>
           )}
           <div className="row">
             {payout.evidenceStatus === "submitted" && (
@@ -279,7 +290,9 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
               </button>
             )}
           </div>
-          {(myRole === "organiser" || payout.proposerId === me) && <EvidenceForm payout={payout} act={act} />}
+          {(myRole === "organiser" || payout.proposerId === me || (fund.kind === "group" && (myRole === "treasurer" || myRole === "member"))) && (
+            <EvidenceForm payout={payout} act={act} />
+          )}
         </div>
       )}
     </article>
@@ -302,7 +315,8 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
       <h3>Luật quỹ</h3>
       <ul>
         <li>
-          Mỗi khoản chi cần <b>{fund.rules.quorum}</b> người duyệt ({fund.kind === "group" ? "thành viên" : "hội đồng giám sát"}). Người tạo lệnh không tự duyệt.
+          {fund.kind === "group" ? "Thành viên nào cũng tạo được lệnh chi; " : ""}Mỗi khoản chi cần <b>{fund.rules.quorum}</b> người duyệt (
+          {fund.kind === "group" ? "thành viên" : "hội đồng giám sát"}). Người tạo lệnh không tự duyệt.
         </li>
         {fund.rules.largeAmount && <li>Khoản trên {vnd(fund.rules.largeAmount)} cần người nhận xác nhận.</li>}
         {fund.rules.evidenceBeforeNext && <li>Đợt chi trước chưa có minh chứng được duyệt thì đợt sau bị khoá.</li>}
@@ -474,6 +488,21 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
   );
 }
 
+// "Đã chi" is where executed payouts are reviewed, with their evidence.
+const FILTERS = [
+  ["all", "Tất cả"],
+  ["pending", "Chờ duyệt"],
+  ["executed", "Đã chi"],
+  ["rejected", "Bị từ chối"],
+] as const;
+type Filter = (typeof FILTERS)[number][0];
+const FILTER_TEST: Record<Filter, (p: Payout) => boolean> = {
+  all: () => true,
+  pending: (p) => p.status === "pending" || p.status === "awaiting_recipient",
+  executed: (p) => p.status === "executed",
+  rejected: (p) => p.status === "rejected",
+};
+
 const TABS = [
   ["payouts", "Khoản chi"],
   ["log", "Nhật ký"],
@@ -484,6 +513,7 @@ type Tab = (typeof TABS)[number][0];
 function FundView({ id }: { id: string }) {
   const { state, error, notice, setNotice, act } = useAppState();
   const [tab, setTab] = useState<Tab>("payouts");
+  const [filter, setFilter] = useState<Filter>("all");
   // A link to /funds/<id>#log opens the log tab.
   useEffect(() => {
     const hash = window.location.hash.slice(1);
@@ -501,6 +531,7 @@ function FundView({ id }: { id: string }) {
   const changes = state.ruleChanges.filter((c) => c.fundId === fund.id);
   const log = state.log.filter((l) => l.fundId === fund.id);
   const blocked = log.filter((l) => l.outcome === "blocked").length;
+  const shown = payouts.filter(FILTER_TEST[filter]);
 
   return (
     <>
@@ -542,8 +573,15 @@ function FundView({ id }: { id: string }) {
       {tab === "payouts" && (
         <div className="cols">
           <div>
-            {payouts.length === 0 && <p className="muted">Chưa có khoản chi nào.</p>}
-            {payouts.map((p) => (
+            <div className="filters" role="group" aria-label="Lọc lệnh chi">
+              {FILTERS.map(([f, label]) => (
+                <button key={f} className={filter === f ? "chip-btn active" : "chip-btn"} onClick={() => setFilter(f)}>
+                  {label} <span className="count">{payouts.filter(FILTER_TEST[f]).length}</span>
+                </button>
+              ))}
+            </div>
+            {shown.length === 0 && <p className="muted">Không có lệnh chi nào ở mục này.</p>}
+            {shown.map((p) => (
               <PayoutCard key={p.id} fund={fund} payout={p} state={state} act={act} />
             ))}
           </div>

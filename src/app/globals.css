@@ -260,3 +260,15 @@ button.account b, button.account small { display: block; }
 .probes li.bad { background: var(--bad-bg); }
 a.chip { color: var(--text); text-decoration: none; }
 a.chip:hover { background: var(--hover); }
+
+/* --- Payout review filter and evidence thumbnails --------------------------- */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+button.chip-btn { background: var(--card); color: var(--text); border: 1px solid var(--line); padding: 5px 12px; font-size: 13px; }
+button.chip-btn:hover { background: var(--hover); filter: none; }
+button.chip-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.evidence-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 8px 0; }
+.evidence-thumb { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 8px; color: inherit; text-decoration: none; }
+.evidence-thumb:hover { border-color: var(--accent); }
+.evidence-thumb img { width: 100%; height: 130px; object-fit: cover; border-radius: 8px; background: var(--hover); }
+.evidence-thumb b, .evidence-thumb small { display: block; overflow-wrap: anywhere; }
+.file-icon { height: 130px; display: grid; place-items: center; border-radius: 8px; background: var(--hover); font-weight: 700; color: var(--muted); }

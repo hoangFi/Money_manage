@@ -154,7 +154,8 @@ export function proposePayout(
   if (!input.reason?.trim()) block("Cần ghi lý do chi.");
 
   if (fund.kind === "group") {
-    if (role !== "treasurer") block("Chỉ thủ quỹ mới được tạo lệnh chi.");
+    // Any member may propose; the quorum of the other members decides.
+    if (role !== "treasurer" && role !== "member") block("Chỉ thành viên quỹ mới được tạo lệnh chi.");
   } else {
     if (role !== "organiser") block("Chỉ người kêu gọi mới được đề xuất giải ngân.");
     const recipient = fund.recipients.find((r) => r.id === input.recipientId);
@@ -330,8 +331,11 @@ export function submitEvidence(
   noAdmin(actor);
   const payout = getPayout(db, payoutId);
   const fund = getFund(db, payout.fundId);
-  if (actorRole(fund, actor) !== "organiser" && payout.proposerId !== actor.id) {
-    block("Chỉ người đề xuất khoản chi mới nộp minh chứng.");
+  // Charity: the organiser or the proposer. Group fund: any member (whoever paid has the receipt).
+  const role = actorRole(fund, actor);
+  const mayUpload = payout.proposerId === actor.id || role === "organiser" || (fund.kind === "group" && (role === "treasurer" || role === "member"));
+  if (!mayUpload) {
+    block(fund.kind === "group" ? "Chỉ thành viên quỹ mới nộp minh chứng." : "Chỉ người đề xuất khoản chi mới nộp minh chứng.");
   }
   if (payout.status !== "executed") block("Chỉ nộp minh chứng sau khi khoản chi đã thực hiện.");
 
@@ -369,7 +373,7 @@ export async function approveEvidence(db: DB, actor: User, payoutId: string, tid
   const valid = await countValid(db, fund, payout.evidenceApprovals);
   if (valid >= fund.rules.quorum) {
     payout.evidenceStatus = "approved";
-    return "Minh chứng đã được hội đồng duyệt. Có thể đề xuất đợt chi tiếp theo.";
+    return fund.kind === "group" ? "Minh chứng đã được các thành viên duyệt." : "Minh chứng đã được hội đồng duyệt. Có thể đề xuất đợt chi tiếp theo.";
   }
   return `Đã duyệt minh chứng (${valid}/${fund.rules.quorum}).`;
 }
@@ -382,7 +386,9 @@ export async function rejectEvidence(db: DB, actor: User, payoutId: string, reas
   requireUnvoted(actor, payout.evidenceApprovals, (payout.evidenceRejections ??= []));
   if (await reject(db, fund, payout.evidenceRejections, approversOf(fund).length, actor, reason, tideToken)) {
     payout.evidenceStatus = "rejected";
-    return "Minh chứng bị hội đồng từ chối. Người kêu gọi phải nộp minh chứng mới; đợt chi sau vẫn bị khoá.";
+    return fund.kind === "group"
+      ? "Minh chứng bị các thành viên từ chối. Cần nộp minh chứng mới."
+      : "Minh chứng bị hội đồng từ chối. Người kêu gọi phải nộp minh chứng mới; đợt chi sau vẫn bị khoá.";
   }
   return `Đã từ chối minh chứng (${payout.evidenceRejections.length} người).`;
 }
