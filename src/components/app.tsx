@@ -199,7 +199,19 @@ function ThemeToggle() {
   );
 }
 
-export function Icon({ name, size = 18 }: { name: keyof typeof ICONS; size?: number }) {
+// Solid (filled) icons; every other icon is drawn as a stroke.
+const FILLED_ICONS: Record<string, string> = {
+  person: "M12 12.5a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM2.5 22c0-5.2 4.3-8 9.5-8s9.5 2.8 9.5 8z",
+};
+
+export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+  if (FILLED_ICONS[name]) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d={FILLED_ICONS[name]} />
+      </svg>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={ICONS[name]} />
@@ -239,7 +251,7 @@ export function Sidebar() {
         <NavLink href="/" icon="home">
           Tổng quan
         </NavLink>
-        <NavLink href="/tide" icon="key">
+        <NavLink href="/tide" icon="person">
           TideCloak và quyền
         </NavLink>
         {state && (
