@@ -8,6 +8,9 @@ export interface User {
   name: string;
   platformAdmin?: boolean;
   account?: string; // mock bank account money is contributed from (and refunded to)
+  // Set per request from the verified TideCloak token, never stored: client roles such as
+  // fund:f-dalat:treasurer. platformAdmin is likewise taken from the token's realm roles.
+  tideRoles?: string[];
 }
 
 export interface Recipient {
@@ -46,6 +49,8 @@ export interface Approval {
   // The Tide-signed access token the approver presented. Tide's ORK network signs it, so this
   // server cannot mint one for a council member and fake their approval. Absent in demo mode.
   tideToken?: string;
+  // Sent to the browser instead of the token: whether that token verifies.
+  signature?: "tide" | "invalid" | "unsigned";
 }
 
 export interface Rejection extends Approval {

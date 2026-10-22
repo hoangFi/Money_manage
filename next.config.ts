@@ -16,11 +16,11 @@ const nextConfig: NextConfig = {
         __dirname,
         "node_modules/@tidecloak/react/dist/esm/index.js"
       ),
-      // Quỹ Chung: pick the session implementation. Demo mode never imports the Tide
+      // Quỹ Chung: pick the session implementation. The simulated TideCloak never imports the Tide
       // provider, so it runs before data/tidecloak.json exists.
       "quy-session$": path.resolve(
         __dirname,
-        process.env.NEXT_PUBLIC_DEMO_AUTH === "1" ? "src/session/demo.tsx" : "src/session/tide.tsx"
+        process.env.NEXT_PUBLIC_SIM_TIDE === "1" ? "src/session/sim.tsx" : "src/session/tide.tsx"
       ),
     };
 

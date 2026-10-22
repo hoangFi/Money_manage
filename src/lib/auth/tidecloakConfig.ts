@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { SIM_TIDE, simAdapterConfig } from "../simtide/realm";
 
 // Playbook: protect-api-nextjs Step 1
 export interface TidecloakConfig {
@@ -15,6 +16,10 @@ export interface TidecloakConfig {
 }
 
 export function loadTideConfig(): TidecloakConfig {
+  // Simulated TideCloak (npm run dev:demo): the simulated realm's adapter config, so token
+  // verification below runs unchanged against its public key.
+  if (SIM_TIDE) return simAdapterConfig();
+
   if (process.env.CLIENT_ADAPTER) {
     return JSON.parse(process.env.CLIENT_ADAPTER);
   }

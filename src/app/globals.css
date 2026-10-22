@@ -234,3 +234,29 @@ tr.blocked td { background: var(--bad-bg); }
   .grid { grid-template-columns: 1fr; }
   table { display: block; overflow-x: auto; }
 }
+
+/* --- Simulated Tide sign-in and the TideCloak page --------------------------- */
+.enclave { max-width: 680px; margin: 24px auto; }
+.enclave-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+.enclave-head h1 { font-size: 22px; }
+.enclave-head p { margin: 2px 0 0; }
+.tide-mark {
+  width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  background: #0b1220; color: #fff; font-weight: 800; font-size: 14px; letter-spacing: .02em;
+}
+.sim-note { background: var(--warn-bg); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.account-group { margin-top: 12px; }
+button.account {
+  width: 100%; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;
+  background: var(--card); color: var(--text); border: 1px solid var(--line); margin: 6px 0; text-align: left;
+}
+button.account:hover { border-color: var(--accent); background: var(--accent-soft); filter: none; }
+button.account b, button.account small { display: block; }
+.roles { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.roles code, td code { background: var(--hover); border-radius: 6px; padding: 1px 6px; }
+.probes { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.probes li { padding: 8px 10px; border-radius: 10px; }
+.probes li.ok { background: var(--ok-bg); }
+.probes li.bad { background: var(--bad-bg); }
+a.chip { color: var(--text); text-decoration: none; }
+a.chip:hover { background: var(--hover); }

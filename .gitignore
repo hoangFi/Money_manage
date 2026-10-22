@@ -17,4 +17,5 @@ data/keycloakdb*
 # Quỹ Chung local data
 data/db.json
 data/evidence/
+data/sim-tide/
 tsconfig.tsbuildinfo

@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "init": "bash scripts/init-tidecloak.sh",
-    "dev:demo": "cross-env DEMO_AUTH=1 NEXT_PUBLIC_DEMO_AUTH=1 next dev --webpack"
+    "dev:demo": "cross-env SIM_TIDE=1 NEXT_PUBLIC_SIM_TIDE=1 next dev --webpack"
   },
   "dependencies": {
     "@tidecloak/nextjs": "0.14.17",

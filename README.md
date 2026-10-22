@@ -30,14 +30,16 @@ Every shortcut fails and is logged: the treasurer withdrawing alone, the admin a
 
 Requirements: Node.js 18+. For Tide sign-in also Docker Desktop, curl and jq (on Windows run the init script from Git Bash).
 
-### Demo mode (no TideCloak needed)
+### Demo with a simulated TideCloak (no TideCloak server needed)
 
 ```bash
 npm install
 npm run dev:demo
 ```
 
-Open http://localhost:3000 and choose who you act as in the top-right menu. "Đặt lại dữ liệu" restores the sample data.
+Open http://localhost:3000, click **Đăng nhập với Tide** and pick an account. The simulated realm (`/sim-tide`) issues the same kind of token TideCloak does: EdDSA-signed, bound to a DPoP key in your browser, carrying your realm and fund roles. The server verifies it with the same `verifyTideJWT` + `verifyDpop` code it uses for a real realm, and reads every role from the token, never from the database. "Đổi tài khoản" switches account; "Đặt lại dữ liệu" restores the sample data. The **TideCloak và quyền** page shows your token and lets you try a stolen-token replay and a token edited to add a role (both rejected).
+
+Where TideCloak fits, planned with Tide's MCP server: [docs/TIDECLOAK.md](docs/TIDECLOAK.md).
 
 ### With TideCloak
 
@@ -66,6 +68,7 @@ npm run dev
 | 10 | Lan, then council | Upload the invoice; 3 approve | Next payout unlocked |
 | 11 | Lan | Send the campaign's refund to her own account | Blocked |
 | 12 | Council | Propose closing the campaign; 3 approve | Remainder refunded pro rata, only to each donor's own account |
+| 13 | Admin | On a pending payout, "Giả lập: chèn lượt duyệt mạo danh vào DB" | Vote shown with an invalid Tide signature; never counted |
 
 Each fund page has a **Nhật ký** (audit log) tab listing every attempt, allowed or blocked, and each executed payout has a public proof page.
 
@@ -78,6 +81,6 @@ Each fund page has a **Nhật ký** (audit log) tab listing every attempt, allow
 
 ### Status of Tide licensing
 
-Tide sign-in, DPoP-verified APIs and Tide-signed approvals are implemented. During the hackathon, Tide's licensing service returned `TIDE-IDPEXT-VENDOR-KEYGEN_FAILED` (`Midgard.FinalizeWallet` 500) for several teams, which Tide support is investigating, so the demo video uses demo mode.
+Tide sign-in, DPoP-verified APIs, token roles and Tide-signed approvals are implemented. During the hackathon, Tide's licensing and signing services returned `TIDE-IDPEXT-VENDOR-KEYGEN_FAILED` (`Midgard.FinalizeWallet` 500) and `Midgard.SignModel` 500 for several teams, which Tide support is investigating, so the demo runs on the simulated TideCloak. Switching to a real realm is configuration only: `npm run init`, then `npm run dev`. The simulation's one honest gap: its signing key sits on our server, whereas TideCloak's exists only as key shares across Tide's ORK network.
 
 Data is synthetic and the bank is mocked.

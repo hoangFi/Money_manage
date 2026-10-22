@@ -29,12 +29,21 @@ function askReason(what: string) {
 
 /** Who approved and who rejected, with each rejection's reason. */
 function Votes({ state, approvals, rejections, quorum }: { state: AppState; approvals: Approval[]; rejections?: Rejection[]; quorum: number }) {
+  // Only votes whose Tide signature verifies count; a forged one is shown but not counted.
+  const valid = approvals.filter((a) => a.signature === "tide");
+  const forged = approvals.filter((a) => a.signature !== "tide");
   return (
     <div className="votes">
       <span>
-        ✅ Duyệt {approvals.length}/{quorum}
-        {approvals.length > 0 && <>: {approvals.map((a) => nameOf(state, a.userId)).join(", ")}</>}
+        ✅ Duyệt {valid.length}/{quorum}
+        {valid.length > 0 && <>: {valid.map((a) => nameOf(state, a.userId)).join(", ")}</>}
+        {valid.length > 0 && <span className="muted"> · 🔏 chữ ký Tide hợp lệ</span>}
       </span>
+      {forged.map((a) => (
+        <span key={a.userId} className="bad">
+          ⚠️ Lượt duyệt mạo danh {nameOf(state, a.userId)}: chữ ký Tide không hợp lệ, không được tính
+        </span>
+      ))}
       {rejections?.map((r) => (
         <span key={r.userId} className="bad">
           ❌ {nameOf(state, r.userId)} từ chối: “{r.reason}”
@@ -213,6 +222,11 @@ function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
       {payout.recipientConfirmedAt && <p>✔ Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}</p>}
 
       <div className="row">
+        {payout.status === "pending" && state.me.platformAdmin && (
+          <button className="small danger" onClick={() => act({ action: "forge_approval", payoutId: payout.id })}>
+            Giả lập: chèn lượt duyệt mạo danh vào DB
+          </button>
+        )}
         {payout.status === "pending" && (
           <VoteButtons
             onApprove={() => act({ action: "approve_payout", payoutId: payout.id })}

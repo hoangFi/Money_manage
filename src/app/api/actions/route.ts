@@ -1,4 +1,5 @@
-import { DEMO_AUTH, withActor } from "@/lib/actor";
+import { withActor } from "@/lib/actor";
+import { SIM_TIDE } from "@/lib/simtide/realm";
 import * as engine from "@/lib/fund/engine";
 import { loadDB, newId, saveDB } from "@/lib/fund/store";
 import type { DB, User } from "@/lib/fund/types";
@@ -41,8 +42,12 @@ async function run(db: DB, actor: User, body: Body, file?: File, tideToken?: str
     case "approve_rule":
       return engine.approveRuleChange(db, actor, body.changeId, tideToken);
     case "tamper_evidence":
-      if (!DEMO_AUTH) throw new engine.Blocked("Chỉ có trong chế độ demo.");
+      if (!SIM_TIDE) throw new engine.Blocked("Chỉ có trong chế độ demo.");
       return engine.tamperEvidence(db, body.payoutId);
+    case "forge_approval":
+      // Demo of an insider attack: only the platform admin may trigger it, and only in the demo.
+      if (!SIM_TIDE || !actor.platformAdmin) throw new engine.Blocked("Chỉ admin nền tảng, trong chế độ demo.");
+      return engine.forgeApproval(db, body.payoutId);
     default:
       throw new engine.Blocked("Hành động không hợp lệ.");
   }

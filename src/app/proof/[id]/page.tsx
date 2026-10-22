@@ -13,7 +13,7 @@ const INTEGRITY = {
 const SIGNATURE_LABEL: Record<string, string> = {
   tide: "🔏 Chữ ký Tide hợp lệ",
   invalid: "⚠️ Chữ ký Tide không hợp lệ (không được tính)",
-  unsigned: "Chế độ demo: không có chữ ký Tide",
+  unsigned: "⚠️ Không có chữ ký Tide (không được tính)",
 };
 const KIND: Record<string, string> = { invoice: "Hoá đơn", photo: "Ảnh thực tế", receipt: "Biên bản nhận", other: "Khác" };
 

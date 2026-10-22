@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       recipient: fund.recipients.find((r) => r.id === payout.recipientId) ?? { name: payout.payee },
       recipientConfirmedAt: payout.recipientConfirmedAt,
       approvals: await Promise.all(
-        payout.approvals.map(async (a) => ({ name: name(a.userId), at: a.at, signature: await approvalStatus(db, a) }))
+        payout.approvals.map(async (a) => ({ name: name(a.userId), at: a.at, signature: await approvalStatus(db, fund, a) }))
       ),
       evidenceStatus: payout.evidenceStatus,
       evidenceApprovals: payout.evidenceApprovals.map((a) => ({ name: name(a.userId), at: a.at })),

@@ -130,43 +130,6 @@ export function NoticeBar({ notice, onClose }: { notice: Notice; onClose: () => 
   );
 }
 
-const DEMO_GROUPS: [string, string[]][] = [
-  ["Quỹ Đà Lạt", ["an", "binh", "chi", "dung", "em"]],
-  ["Hội đồng", ["hoa", "khoa", "minh", "nga", "phuc"]],
-  ["Chiến dịch", ["lan", "minhphat", "hieutruong", "donor1", "donor2"]],
-  ["Khác", ["admin"]],
-];
-
-function DemoSwitcher() {
-  const session = useSession();
-  const [users, setUsers] = useState<{ username: string; name: string }[]>([]);
-  useEffect(() => {
-    fetch("/api/demo")
-      .then((r) => r.json())
-      .then((d) => setUsers(d.users ?? []));
-  }, []);
-  const label = (u: string) => users.find((x) => x.username === u)?.name ?? u;
-  return (
-    <label className="switcher">
-      <span>Đang đóng vai</span>
-      <select value={session.username ?? ""} onChange={(e) => session.switchUser?.(e.target.value)}>
-        <option value="" disabled>
-          Chọn người dùng…
-        </option>
-        {DEMO_GROUPS.map(([group, names]) => (
-          <optgroup key={group} label={group}>
-            {names.map((u) => (
-              <option key={u} value={u}>
-                {label(u)}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 // Small stroke icons (lucide-style) so the shell needs no icon package.
 const ICONS: Record<string, string> = {
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -177,6 +140,7 @@ const ICONS: Record<string, string> = {
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
   moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
+  key: "M15 7a4 4 0 1 1-3.9 5H8v3H5v-3H3v-3h8.1A4 4 0 0 1 15 7z",
 };
 
 const THEME_KEY = "quy-chung-theme";
@@ -240,6 +204,9 @@ export function Sidebar() {
         <NavLink href="/" icon="home">
           Tổng quan
         </NavLink>
+        <NavLink href="/tide" icon="key">
+          TideCloak và quyền
+        </NavLink>
         {state && (
           <>
             <hr />
@@ -270,13 +237,15 @@ export function Sidebar() {
       </nav>
       <div className="sidebar-foot">
         <Icon name="shield" size={16} />
-        <span>{session.demo ? "Chế độ demo: chưa kết nối TideCloak" : "Bảo vệ bởi TideCloak"}</span>
+        <span>{session.demo ? "Bảo vệ bởi TideCloak (giả lập)" : "Bảo vệ bởi TideCloak"}</span>
       </div>
     </aside>
   );
 }
 
 const PAGE_TITLE: [string, string][] = [
+  ["/tide", "TideCloak và quyền"],
+  ["/sim-tide", "Đăng nhập với Tide"],
   ["/log", "Nhật ký"],
   ["/funds/", "Quỹ"],
   ["/proof/", "Minh chứng"],
@@ -298,27 +267,25 @@ export function Header() {
       </div>
       <div className="who">
         <ThemeToggle />
-        {session.demo ? (
+        {session.demo && (
+          <button
+            className="ghost small"
+            onClick={async () => {
+              if (!confirm("Xoá toàn bộ dữ liệu demo và nạp lại dữ liệu mẫu?")) return;
+              await fetch("/api/demo", { method: "POST" });
+              location.reload();
+            }}
+          >
+            <Icon name="refresh" size={15} /> Đặt lại dữ liệu
+          </button>
+        )}
+        {session.authenticated ? (
           <>
-            <DemoSwitcher />
-            <button
-              className="ghost small"
-              onClick={async () => {
-                if (!confirm("Xoá toàn bộ dữ liệu demo và nạp lại dữ liệu mẫu?")) return;
-                await fetch("/api/demo", { method: "POST" });
-                location.reload();
-              }}
-            >
-              <Icon name="refresh" size={15} /> Đặt lại dữ liệu
-            </button>
-          </>
-        ) : session.authenticated ? (
-          <>
-            <span className="chip">
-              <Icon name="user" size={15} /> {session.username}
-            </span>
+            <Link href="/tide" className="chip" title="Xem token và vai trò TideCloak">
+              <Icon name="key" size={15} /> {session.username}
+            </Link>
             <button className="ghost small" onClick={session.logout}>
-              Đăng xuất
+              {session.demo ? "Đổi tài khoản" : "Đăng xuất"}
             </button>
           </>
         ) : (
@@ -338,7 +305,8 @@ export function RequireLogin({ children }: { children: React.ReactNode }) {
       <section className="card center">
         <h2>Tiền chung không ai ôm được</h2>
         <p>Không ai, kể cả thủ quỹ, người kêu gọi hay admin, có thể một mình rút tiền hoặc sửa luật quỹ.</p>
-        {session.demo ? <p>Chọn một người dùng ở góc trên để bắt đầu.</p> : <button onClick={session.login}>Đăng nhập với Tide</button>}
+        <button onClick={session.login}>Đăng nhập với Tide</button>
+        {session.demo && <p className="muted">TideCloak giả lập: đăng nhập, vai trò và kiểm tra quyền chạy như với TideCloak thật.</p>}
       </section>
     );
   }

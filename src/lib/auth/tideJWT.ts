@@ -44,10 +44,11 @@ export async function verifyTideJWT(token: string): Promise<JWTPayload> {
 }
 
 /**
- * Checks a stored approval token: signed by this realm's Tide key and issued to `username`.
- * Verified as of its own issue time, so an approval stays auditable after the token expires.
+ * Checks a stored approval token: signed by this realm's Tide key, issued to `username`, and
+ * carrying one of `roles` on this client. Verified as of its own issue time, so an approval
+ * stays auditable after the token expires.
  */
-export async function verifyApprovalToken(token: string, username: string): Promise<boolean> {
+export async function verifyApprovalToken(token: string, username: string, roles: string[]): Promise<boolean> {
   try {
     const { config, JWKS } = getConfig();
     const { iat } = decodeJwt(token);
@@ -55,7 +56,8 @@ export async function verifyApprovalToken(token: string, username: string): Prom
       issuer: `${config["auth-server-url"].replace(/\/+$/, "")}/realms/${config.realm}`,
       currentDate: iat ? new Date(iat * 1000) : undefined,
     });
-    return payload.azp === config.resource && payload.preferred_username === username;
+    const granted: string[] = (payload.resource_access as any)?.[config.resource]?.roles ?? [];
+    return payload.azp === config.resource && payload.preferred_username === username && roles.some((r) => granted.includes(r));
   } catch {
     return false;
   }

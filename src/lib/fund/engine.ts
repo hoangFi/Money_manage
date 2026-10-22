@@ -1,14 +1,19 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { SignJWT, generateKeyPair } from "jose";
 import { verifyApprovalToken } from "../auth/tideJWT";
+import { loadTideConfig } from "../auth/tidecloakConfig";
 import { EVIDENCE_DIR, newId } from "./store";
 import type { Approval, DB, Evidence, Fund, FundRole, Payout, Rejection, RuleChange, RuleChangeSpec, User } from "./types";
 
 // The fund rules. Every mutation goes through here; a rule violation throws Blocked,
 // which the API logs as a blocked attempt (the "Nhật ký" screen).
 //
-// Approvals count towards a quorum only with a Tide-signed token (see approvalStatus below).
+// Who holds which role in a fund comes from the caller's verified TideCloak token
+// (client roles `fund:<fundId>:<role>`), never from this database, so editing the data store
+// cannot promote anyone. Approvals count towards a quorum only with a Tide-signed token issued
+// to that voter with the approver role (see approvalStatus below).
 // TODO(tide): move payout execution itself into a Forseti contract, so the ORK network signs
 // the transfer and the bank verifies that signature, instead of this server executing it.
 
@@ -37,6 +42,23 @@ export function approversOf(fund: Fund): string[] {
   return fund.members.filter((m) => roles.includes(m.role)).map((m) => m.userId);
 }
 
+/**
+ * The caller's role in a fund. Privileged roles come only from TideCloak (`actor.tideRoles`);
+ * the database can only say someone is a donor, which needs no permission.
+ */
+export function actorRole(fund: Fund, actor: User): FundRole | undefined {
+  const granted = (actor.tideRoles ?? [])
+    .map((r) => r.split(":"))
+    .find(([kind, fundId]) => kind === "fund" && fundId === fund.id)?.[2] as FundRole | undefined;
+  if (granted) return granted;
+  return roleIn(fund, actor.id) === "donor" ? "donor" : undefined;
+}
+
+/** TideCloak roles that make someone an approver of this fund. */
+function approverRoles(fund: Fund): FundRole[] {
+  return fund.kind === "group" ? ["treasurer", "member"] : ["council"];
+}
+
 function noAdmin(actor: User) {
   if (actor.platformAdmin) {
     block("Admin nền tảng không có quyền gì với tiền hay luật của quỹ.");
@@ -48,28 +70,27 @@ function noAdmin(actor: User) {
 // This server holds no Tide signing key, so an approval written straight into the data store
 // (by an admin, the operator or an attacker) never counts towards the quorum.
 
-const REQUIRE_TIDE_PROOF = process.env.DEMO_AUTH !== "1";
-
-export async function approvalStatus(db: DB, a: Approval): Promise<"tide" | "invalid" | "unsigned"> {
+export async function approvalStatus(db: DB, fund: Fund, a: Approval): Promise<"tide" | "invalid" | "unsigned"> {
   if (!a.tideToken) return "unsigned";
   const user = db.users.find((u) => u.id === a.userId);
-  return user && (await verifyApprovalToken(a.tideToken, user.username)) ? "tide" : "invalid";
+  const roles = approverRoles(fund).map((r) => `fund:${fund.id}:${r}`);
+  return user && (await verifyApprovalToken(a.tideToken, user.username, roles)) ? "tide" : "invalid";
 }
 
-async function countValid(db: DB, approvals: Approval[]) {
-  if (!REQUIRE_TIDE_PROOF) return approvals.length;
+async function countValid(db: DB, fund: Fund, votes: Approval[]) {
   let n = 0;
-  for (const a of approvals) if ((await approvalStatus(db, a)) === "tide") n++;
+  for (const a of votes) if ((await approvalStatus(db, fund, a)) === "tide") n++;
   return n;
 }
 
 function requireApprover(fund: Fund, actor: User) {
   noAdmin(actor);
-  if (!approversOf(fund).includes(actor.id)) {
+  const role = actorRole(fund, actor);
+  if (!role || !approverRoles(fund).includes(role)) {
     block(
       fund.kind === "group"
-        ? "Chỉ thành viên quỹ mới được duyệt."
-        : "Chỉ hội đồng giám sát mới được duyệt."
+        ? `Chỉ thành viên quỹ mới được duyệt (cần vai trò TideCloak fund:${fund.id}:member).`
+        : `Chỉ hội đồng giám sát mới được duyệt (cần vai trò TideCloak fund:${fund.id}:council).`
     );
   }
 }
@@ -87,10 +108,10 @@ function requireUnvoted(actor: User, approvals: Approval[], rejections: Rejectio
  * Records a rejection. Returns true once the quorum can no longer be reached, i.e. fewer
  * eligible voters remain than the quorum needs. A rejection always needs a reason.
  */
-async function reject(db: DB, rejections: Rejection[], eligible: number, quorum: number, actor: User, reason: string, tideToken?: string) {
+async function reject(db: DB, fund: Fund, rejections: Rejection[], eligible: number, actor: User, reason: string, tideToken?: string) {
   if (!reason?.trim()) block("Cần ghi lý do từ chối.");
   rejections.push({ userId: actor.id, at: now(), reason: reason.trim(), tideToken });
-  return eligible - (await countValid(db, rejections)) < quorum;
+  return eligible - (await countValid(db, fund, rejections)) < fund.rules.quorum;
 }
 
 // --- Money in -----------------------------------------------------------
@@ -127,7 +148,7 @@ export function proposePayout(
   noAdmin(actor);
   const fund = getFund(db, input.fundId);
   requireOpen(fund);
-  const role = roleIn(fund, actor.id);
+  const role = actorRole(fund, actor);
   const amount = input.amount;
   if (!Number.isInteger(amount) || amount <= 0) block("Số tiền không hợp lệ.");
   if (!input.reason?.trim()) block("Cần ghi lý do chi.");
@@ -184,10 +205,11 @@ export async function approvePayout(db: DB, actor: User, payoutId: string, tideT
   requireApprover(fund, actor);
   if (payout.status !== "pending") block("Lệnh chi này không còn chờ duyệt.");
   if (payout.proposerId === actor.id) block("Người tạo lệnh chi không được tự duyệt lệnh của mình.");
+  await dropForgedVote(db, fund, payout, actor);
   requireUnvoted(actor, payout.approvals, (payout.rejections ??= []));
 
   payout.approvals.push({ userId: actor.id, at: now(), tideToken });
-  const valid = await countValid(db, payout.approvals);
+  const valid = await countValid(db, fund, payout.approvals);
   if (valid < fund.rules.quorum) {
     return `Đã duyệt (${valid}/${fund.rules.quorum}).`;
   }
@@ -196,6 +218,43 @@ export async function approvePayout(db: DB, actor: User, payoutId: string, tideT
     return `Đủ ${fund.rules.quorum} người duyệt. Khoản lớn: chờ người nhận xác nhận.`;
   }
   return execute(db, fund, payout);
+}
+
+/** Removes a vote recorded under the actor's name whose Tide signature does not verify. */
+async function dropForgedVote(db: DB, fund: Fund, payout: Payout, actor: User) {
+  const mine = payout.approvals.find((a) => a.userId === actor.id);
+  if (mine && (await approvalStatus(db, fund, mine)) !== "tide") {
+    payout.approvals = payout.approvals.filter((a) => a !== mine);
+  }
+}
+
+/**
+ * Demo only: someone with access to our server or database writes an approval in a council
+ * member's name, with a token they signed themselves. It is stored, shown, and never counted,
+ * because only the realm key (in TideCloak: Tide's ORK network) can sign a valid token.
+ */
+export async function forgeApproval(db: DB, payoutId: string) {
+  const payout = getPayout(db, payoutId);
+  const fund = getFund(db, payout.fundId);
+  if (payout.status !== "pending") block("Lệnh chi này không còn chờ duyệt.");
+  const voted = new Set([...payout.approvals, ...(payout.rejections ?? [])].map((v) => v.userId));
+  const victimId = approversOf(fund).find((id) => id !== payout.proposerId && !voted.has(id)) ?? block("Không còn ai để mạo danh.");
+  const victim = db.users.find((u) => u.id === victimId)!;
+  const config = loadTideConfig();
+  const { privateKey } = await generateKeyPair("EdDSA", { crv: "Ed25519" });
+  const forged = await new SignJWT({
+    azp: config.resource,
+    preferred_username: victim.username,
+    resource_access: { [config.resource]: { roles: approverRoles(fund).map((r) => `fund:${fund.id}:${r}`) } },
+  })
+    .setProtectedHeader({ alg: "EdDSA", typ: "JWT" })
+    .setIssuer(`${config["auth-server-url"]}/realms/${config.realm}`)
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(privateKey);
+  payout.approvals.push({ userId: victim.id, at: now(), tideToken: forged });
+  const valid = await countValid(db, fund, payout.approvals);
+  return `Đã giả lập: chèn lượt duyệt mạo danh ${victim.name} thẳng vào cơ sở dữ liệu. Chữ ký Tide không hợp lệ nên không được tính (vẫn ${valid}/${fund.rules.quorum}).`;
 }
 
 export async function rejectPayout(db: DB, actor: User, payoutId: string, reason: string, tideToken?: string) {
@@ -207,7 +266,7 @@ export async function rejectPayout(db: DB, actor: User, payoutId: string, reason
   requireUnvoted(actor, payout.approvals, (payout.rejections ??= []));
   // The proposer cannot vote, so they are not counted among the voters who could still approve.
   const eligible = approversOf(fund).filter((id) => id !== payout.proposerId).length;
-  if (await reject(db, payout.rejections, eligible, fund.rules.quorum, actor, reason, tideToken)) {
+  if (await reject(db, fund, payout.rejections, eligible, actor, reason, tideToken)) {
     payout.status = "rejected";
     return `Lệnh chi ${payout.amount.toLocaleString("vi-VN")}đ bị từ chối: không còn đủ người để đạt ${fund.rules.quorum} lượt duyệt.`;
   }
@@ -219,11 +278,13 @@ export async function confirmByRecipient(db: DB, actor: User, payoutId: string) 
   const payout = getPayout(db, payoutId);
   const fund = getFund(db, payout.fundId);
   const recipient = fund.recipients.find((r) => r.id === payout.recipientId);
-  if (!recipient || recipient.userId !== actor.id) block("Chỉ người nhận của khoản chi này mới được xác nhận.");
+  if (!recipient || recipient.userId !== actor.id || actorRole(fund, actor) !== "recipient") {
+    block("Chỉ người nhận của khoản chi này mới được xác nhận.");
+  }
   if (payout.status === "executed") block("Khoản chi đã thực hiện.");
   payout.recipientConfirmedAt = now();
   if (payout.status === "awaiting_recipient") {
-    if ((await countValid(db, payout.approvals)) < fund.rules.quorum) {
+    if ((await countValid(db, fund, payout.approvals)) < fund.rules.quorum) {
       block("Lệnh chi chưa đủ lượt duyệt có chữ ký Tide hợp lệ.");
     }
     return execute(db, fund, payout);
@@ -269,7 +330,7 @@ export function submitEvidence(
   noAdmin(actor);
   const payout = getPayout(db, payoutId);
   const fund = getFund(db, payout.fundId);
-  if (roleIn(fund, actor.id) !== "organiser" && payout.proposerId !== actor.id) {
+  if (actorRole(fund, actor) !== "organiser" && payout.proposerId !== actor.id) {
     block("Chỉ người đề xuất khoản chi mới nộp minh chứng.");
   }
   if (payout.status !== "executed") block("Chỉ nộp minh chứng sau khi khoản chi đã thực hiện.");
@@ -305,7 +366,7 @@ export async function approveEvidence(db: DB, actor: User, payoutId: string, tid
   if (payout.evidenceStatus !== "submitted") block("Không có minh chứng nào chờ duyệt.");
   requireUnvoted(actor, payout.evidenceApprovals, (payout.evidenceRejections ??= []));
   payout.evidenceApprovals.push({ userId: actor.id, at: now(), tideToken });
-  const valid = await countValid(db, payout.evidenceApprovals);
+  const valid = await countValid(db, fund, payout.evidenceApprovals);
   if (valid >= fund.rules.quorum) {
     payout.evidenceStatus = "approved";
     return "Minh chứng đã được hội đồng duyệt. Có thể đề xuất đợt chi tiếp theo.";
@@ -319,7 +380,7 @@ export async function rejectEvidence(db: DB, actor: User, payoutId: string, reas
   requireApprover(fund, actor);
   if (payout.evidenceStatus !== "submitted") block("Không có minh chứng nào chờ duyệt.");
   requireUnvoted(actor, payout.evidenceApprovals, (payout.evidenceRejections ??= []));
-  if (await reject(db, payout.evidenceRejections, approversOf(fund).length, fund.rules.quorum, actor, reason, tideToken)) {
+  if (await reject(db, fund, payout.evidenceRejections, approversOf(fund).length, actor, reason, tideToken)) {
     payout.evidenceStatus = "rejected";
     return "Minh chứng bị hội đồng từ chối. Người kêu gọi phải nộp minh chứng mới; đợt chi sau vẫn bị khoá.";
   }
@@ -347,7 +408,7 @@ export function proposeRuleChange(db: DB, actor: User, fundId: string, spec: Rul
   const fund = getFund(db, fundId);
   noAdmin(actor);
   requireOpen(fund);
-  const role = roleIn(fund, actor.id);
+  const role = actorRole(fund, actor);
   if (!role || role === "donor" || role === "recipient") block("Bạn không có quyền đề xuất sửa luật quỹ này.");
   if (spec.type === "set_quorum") {
     const n = approversOf(fund).length;
@@ -386,7 +447,7 @@ export async function approveRuleChange(db: DB, actor: User, changeId: string, t
   if (change.status !== "pending") block("Đề xuất này không còn chờ duyệt.");
   requireUnvoted(actor, change.approvals, (change.rejections ??= []));
   change.approvals.push({ userId: actor.id, at: now(), tideToken });
-  const valid = await countValid(db, change.approvals);
+  const valid = await countValid(db, fund, change.approvals);
   if (valid < fund.rules.quorum) {
     return `Đã duyệt (${valid}/${fund.rules.quorum}).`;
   }
@@ -408,7 +469,7 @@ export async function rejectRuleChange(db: DB, actor: User, changeId: string, re
   requireApprover(fund, actor);
   if (change.status !== "pending") block("Đề xuất này không còn chờ duyệt.");
   requireUnvoted(actor, change.approvals, (change.rejections ??= []));
-  if (await reject(db, change.rejections, approversOf(fund).length, fund.rules.quorum, actor, reason, tideToken)) {
+  if (await reject(db, fund, change.rejections, approversOf(fund).length, actor, reason, tideToken)) {
     change.status = "rejected";
     return "Đề xuất bị từ chối: không còn đủ người để đạt quorum.";
   }
