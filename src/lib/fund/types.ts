@@ -25,6 +25,8 @@ export interface Fund {
   kind: "group" | "charity";
   name: string;
   description: string;
+  nameEn?: string; // English UI
+  descriptionEn?: string;
   balance: number;
   goal?: number;
   members: { userId: string; role: FundRole }[];

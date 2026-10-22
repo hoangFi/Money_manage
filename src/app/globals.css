@@ -413,3 +413,9 @@ button.seg-btn.active { background: var(--card); color: var(--text); box-shadow:
   .tab { transition: color .15s, border-color .25s; }
   .bar div { transition: width .6s cubic-bezier(.2, .7, .2, 1); }
 }
+
+/* --- Language switch -------------------------------------------------------- */
+.lang-toggle { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.lang-toggle button { background: none; color: var(--muted); padding: 4px 9px; font-size: 12.5px; border-radius: 7px; }
+.lang-toggle button:hover { color: var(--text); filter: none; }
+.lang-toggle button.active { background: var(--accent); color: var(--accent-ink); }

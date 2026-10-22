@@ -37,7 +37,7 @@ npm install
 npm run dev:demo
 ```
 
-Open http://localhost:3000, click **Đăng nhập với Tide** and pick an account. The simulated realm (`/sim-tide`) issues the same kind of token TideCloak does: EdDSA-signed, bound to a DPoP key in your browser, carrying your realm and fund roles. The server verifies it with the same `verifyTideJWT` + `verifyDpop` code it uses for a real realm, and reads every role from the token, never from the database. "Đổi tài khoản" switches account; "Đặt lại dữ liệu" restores the sample data. The **TideCloak và quyền** page shows your token and lets you try a stolen-token replay and a token edited to add a role (both rejected).
+Open http://localhost:3000, click **Đăng nhập với Tide** and pick an account. The simulated realm (`/sim-tide`) issues the same kind of token TideCloak does: EdDSA-signed, bound to a DPoP key in your browser, carrying your realm and fund roles. The server verifies it with the same `verifyTideJWT` + `verifyDpop` code it uses for a real realm, and reads every role from the token, never from the database. "Đổi tài khoản" switches account; "Đặt lại dữ liệu" restores the sample data. The **VI | EN** switch in the header changes the whole interface, server messages included. The **TideCloak và quyền** page shows your token and lets you try a stolen-token replay and a token edited to add a role (both rejected).
 
 Where TideCloak fits, planned with Tide's MCP server: [docs/TIDECLOAK.md](docs/TIDECLOAK.md).
 

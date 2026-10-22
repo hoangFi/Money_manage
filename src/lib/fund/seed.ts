@@ -31,6 +31,8 @@ export function seed(): DB {
         kind: "group",
         name: "Du lịch Đà Lạt",
         description: "Quỹ chung của 5 bạn cho chuyến đi Đà Lạt tháng 12.",
+        nameEn: "Da Lat trip",
+        descriptionEn: "Five friends' shared fund for a December trip to Da Lat.",
         balance: 15_000_000,
         members: [
           { userId: "u-an", role: "treasurer" },
@@ -47,6 +49,8 @@ export function seed(): DB {
         kind: "charity",
         name: "Xây lại lớp học cho điểm trường Nậm Cang",
         description: "Điểm trường bị lũ cuốn. Mục tiêu 200 triệu để xây lại 2 phòng học.",
+        nameEn: "Rebuild classrooms for Nam Cang school",
+        descriptionEn: "The school was swept away by a flood. Goal: 200 million VND to rebuild two classrooms.",
         balance: 0,
         goal: 200_000_000,
         deadline: "2026-12-31T23:59:59+07:00",

@@ -3,55 +3,64 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppState, Icon, LogTable, Mark, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import { AppState, fundText, Icon, LogTable, Mark, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import { useLang, useT, type Text } from "@/lib/i18n";
 import type { Approval, Fund, Payout, Rejection, RuleChange } from "@/lib/fund/types";
 
 type Act = (body: Record<string, unknown> | FormData) => Promise<boolean>;
 
-const STATUS: Record<Payout["status"], string> = {
-  pending: "Chờ duyệt",
-  awaiting_recipient: "Chờ người nhận xác nhận",
-  executed: "Đã chuyển tiền",
-  rejected: "Bị từ chối",
+const STATUS: Record<Payout["status"], Text> = {
+  pending: ["Chờ duyệt", "Pending"],
+  awaiting_recipient: ["Chờ người nhận xác nhận", "Awaiting recipient"],
+  executed: ["Đã chuyển tiền", "Paid"],
+  rejected: ["Bị từ chối", "Rejected"],
 };
-const EVIDENCE: Record<Payout["evidenceStatus"], string> = {
-  none: "Chưa có minh chứng",
-  submitted: "Minh chứng chờ hội đồng duyệt",
-  approved: "Minh chứng đã duyệt",
-  rejected: "Minh chứng bị từ chối, cần nộp lại",
+const EVIDENCE: Record<Payout["evidenceStatus"], Text> = {
+  none: ["Chưa có minh chứng", "No evidence yet"],
+  submitted: ["Minh chứng chờ hội đồng duyệt", "Evidence awaiting council review"],
+  approved: ["Minh chứng đã duyệt", "Evidence approved"],
+  rejected: ["Minh chứng bị từ chối, cần nộp lại", "Evidence rejected, resubmit"],
+};
+const EVIDENCE_GROUP: Partial<Record<Payout["evidenceStatus"], Text>> = {
+  submitted: ["Minh chứng chờ thành viên duyệt", "Evidence awaiting members' review"],
 };
 
 /** Asks for the reason a rejection must carry; null if the user cancels. */
-function askReason(what: string) {
-  const reason = window.prompt(`Lý do từ chối ${what}:`);
+function askReason(question: string) {
+  const reason = window.prompt(question);
   return reason?.trim() ? reason.trim() : null;
 }
 
 /** Who approved and who rejected, with each rejection's reason. */
 function Votes({ state, approvals, rejections, quorum }: { state: AppState; approvals: Approval[]; rejections?: Rejection[]; quorum: number }) {
+  const t = useT();
   // Only votes whose Tide signature verifies count; a forged one is shown but not counted.
   const valid = approvals.filter((a) => a.signature === "tide");
   const forged = approvals.filter((a) => a.signature !== "tide");
   return (
     <div className="votes">
       <span>
-        <Mark kind="ok" /> Duyệt {valid.length}/{quorum}
+        <Mark kind="ok" /> {t("Duyệt", "Approved")} {valid.length}/{quorum}
         {valid.length > 0 && <>: {valid.map((a) => nameOf(state, a.userId)).join(", ")}</>}
         {valid.length > 0 && (
           <span className="muted">
             {" "}
-            · <Mark kind="lock" /> chữ ký Tide hợp lệ
+            · <Mark kind="lock" /> {t("chữ ký Tide hợp lệ", "valid Tide signatures")}
           </span>
         )}
       </span>
       {forged.map((a) => (
         <span key={a.userId} className="bad">
-          <Mark kind="warn" /> Lượt duyệt mạo danh {nameOf(state, a.userId)}: chữ ký Tide không hợp lệ, không được tính
+          <Mark kind="warn" />{" "}
+          {t(
+            `Lượt duyệt mạo danh ${nameOf(state, a.userId)}: chữ ký Tide không hợp lệ, không được tính`,
+            `Forged approval in ${nameOf(state, a.userId)}'s name: invalid Tide signature, not counted`
+          )}
         </span>
       ))}
       {rejections?.map((r) => (
         <span key={r.userId} className="bad">
-          <Mark kind="bad" /> {nameOf(state, r.userId)} từ chối: “{r.reason}”
+          <Mark kind="bad" /> {nameOf(state, r.userId)} {t("từ chối", "rejected")}: “{r.reason}”
         </span>
       ))}
     </div>
@@ -59,20 +68,22 @@ function Votes({ state, approvals, rejections, quorum }: { state: AppState; appr
 }
 
 /** Approve and reject buttons for whoever may vote (the server enforces who that is). */
-function VoteButtons({ onApprove, onReject, approveLabel = "Duyệt" }: { onApprove: () => void; onReject: () => void; approveLabel?: string }) {
+function VoteButtons({ onApprove, onReject, approveLabel }: { onApprove: () => void; onReject: () => void; approveLabel?: string }) {
+  const t = useT();
   return (
     <>
       <button className="small" onClick={onApprove}>
-        {approveLabel}
+        {approveLabel ?? t("Duyệt", "Approve")}
       </button>
       <button className="small ghost bad-outline" onClick={onReject}>
-        Từ chối
+        {t("Từ chối", "Reject")}
       </button>
     </>
   );
 }
 
 function Contribute({ fund, act }: { fund: Fund; act: Act }) {
+  const t = useT();
   const [amount, setAmount] = useState("500000");
   return (
     <form
@@ -82,14 +93,15 @@ function Contribute({ fund, act }: { fund: Fund; act: Act }) {
         act({ action: "contribute", fundId: fund.id, amount: Number(amount) });
       }}
     >
-      <input type="number" min={1000} step={1000} value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Số tiền góp" />
-      <button className="ghost">Góp tiền (mock)</button>
+      <input type="number" min={1000} step={1000} value={amount} onChange={(e) => setAmount(e.target.value)} aria-label={t("Số tiền góp", "Amount to contribute")} />
+      <button className="ghost">{t("Góp tiền (mock)", "Contribute (mock)")}</button>
     </form>
   );
 }
 
 /** Centered dialog; closes on the backdrop, the close button or Escape. */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -100,7 +112,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
       <div className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Đóng">
+          <button className="icon-btn" onClick={onClose} aria-label={t("Đóng", "Close")}>
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -111,6 +123,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function ProposeForm({ fund, act, onDone }: { fund: Fund; act: Act; onDone: () => void }) {
+  const t = useT();
   const [amount, setAmount] = useState(fund.kind === "group" ? "3000000" : "80000000");
   const [reason, setReason] = useState(fund.kind === "group" ? "Đặt cọc homestay 2 đêm" : "Mua 200 bao xi măng, cát, thép");
   const [payee, setPayee] = useState("Homestay Đồi Thông");
@@ -135,61 +148,69 @@ function ProposeForm({ fund, act, onDone }: { fund: Fund; act: Act; onDone: () =
       }}
     >
       <label>
-        Số tiền (đ)
+        {t("Số tiền (đ)", "Amount (VND)")}
         <input type="number" min={1000} step={1000} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
       </label>
       <label>
-        Lý do chi
+        {t("Lý do chi", "Reason")}
         <input value={reason} onChange={(e) => setReason(e.target.value)} />
       </label>
       {fund.kind === "group" ? (
         <label>
-          Chi cho
+          {t("Chi cho", "Pay to")}
           <input value={payee} onChange={(e) => setPayee(e.target.value)} />
         </label>
       ) : (
         <>
           <label>
-            Người nhận
+            {t("Người nhận", "Recipient")}
             <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
               {fund.recipients.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name} · {r.account}
                 </option>
               ))}
-              <option value="__other">Tài khoản khác…</option>
+              <option value="__other">{t("Tài khoản khác…", "Another account…")}</option>
             </select>
           </label>
           {recipientId === "__other" && (
             <label>
-              Tài khoản khác
+              {t("Tài khoản khác", "Other account")}
               <input value={other} onChange={(e) => setOther(e.target.value)} />
             </label>
           )}
         </>
       )}
       <p className="muted small-text">
-        Cần {fund.rules.quorum} {fund.kind === "group" ? "thành viên khác" : "thành viên hội đồng"} duyệt thì tiền mới được chuyển. Bạn không tự duyệt
-        lệnh của mình.
+        {fund.kind === "group"
+          ? t(
+              `Cần ${fund.rules.quorum} thành viên khác duyệt thì tiền mới được chuyển. Bạn không tự duyệt lệnh của mình.`,
+              `${fund.rules.quorum} other members must approve before money moves. You cannot approve your own payout.`
+            )
+          : t(
+              `Cần ${fund.rules.quorum} thành viên hội đồng duyệt thì tiền mới được chuyển. Bạn không tự duyệt lệnh của mình.`,
+              `${fund.rules.quorum} council members must approve before money moves. You cannot approve your own proposal.`
+            )}
       </p>
       <div className="modal-actions">
         <button type="button" className="ghost" onClick={onDone}>
-          Huỷ
+          {t("Huỷ", "Cancel")}
         </button>
-        <button>{fund.kind === "group" ? "Tạo lệnh chi" : "Gửi đề xuất"}</button>
+        <button>{fund.kind === "group" ? t("Tạo lệnh chi", "Create payout") : t("Gửi đề xuất", "Submit proposal")}</button>
       </div>
     </form>
   );
 }
 
-const EVIDENCE_KINDS = [
-  ["invoice", "Hoá đơn"],
-  ["photo", "Ảnh thực tế"],
-  ["receipt", "Biên bản nhận"],
-  ["other", "Khác"],
-] as const;
+const EVIDENCE_KINDS: [string, Text][] = [
+  ["invoice", ["Hoá đơn", "Invoice"]],
+  ["photo", ["Ảnh thực tế", "Photo"]],
+  ["receipt", ["Biên bản nhận", "Delivery note"]],
+  ["other", ["Khác", "Other"]],
+];
 
 function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -206,7 +227,7 @@ function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
   if (!open) {
     return (
       <button className="ghost small" onClick={() => setOpen(true)}>
-        <Icon name="upload" size={15} /> Thêm minh chứng
+        <Icon name="upload" size={15} /> {t("Thêm minh chứng", "Add evidence")}
       </button>
     );
   }
@@ -229,10 +250,10 @@ function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
         }
       }}
     >
-      <div className="seg" role="group" aria-label="Loại minh chứng">
+      <div className="seg" role="group" aria-label={t("Loại minh chứng", "Evidence type")}>
         {EVIDENCE_KINDS.map(([k, label]) => (
           <button type="button" key={k} className={kind === k ? "seg-btn active" : "seg-btn"} onClick={() => setKind(k)}>
-            {label}
+            {t(...label)}
           </button>
         ))}
       </div>
@@ -252,20 +273,24 @@ function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
         <input type="file" accept="image/*,application/pdf" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt="Ảnh minh chứng đã chọn" />
+          <img src={preview} alt={t("Ảnh minh chứng đã chọn", "Selected evidence image")} />
         ) : (
           <span className="dz-icon">
             <Icon name={file ? "file" : "upload"} size={22} />
           </span>
         )}
         <span>
-          <b>{file ? file.name : "Kéo ảnh hoặc PDF vào đây"}</b>
-          <small className="muted">{file ? `${Math.ceil(file.size / 1024)} KB · bấm để chọn file khác` : "hoặc bấm để chọn file từ máy"}</small>
+          <b>{file ? file.name : t("Kéo ảnh hoặc PDF vào đây", "Drop a photo or PDF here")}</b>
+          <small className="muted">
+            {file
+              ? `${Math.ceil(file.size / 1024)} KB · ${t("bấm để chọn file khác", "click to choose another file")}`
+              : t("hoặc bấm để chọn file từ máy", "or click to choose a file")}
+          </small>
         </span>
       </label>
-      <input placeholder="Ghi chú, ví dụ: Hoá đơn số 0012 của VLXD Minh Phát" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input placeholder={t("Ghi chú, ví dụ: Hoá đơn số 0012 của VLXD Minh Phát", "Note, e.g. Invoice no. 0012 from Minh Phat building supplies")} value={note} onChange={(e) => setNote(e.target.value)} />
       <div className="modal-actions">
-        <span className="muted small-text">Khoá bằng SHA-256, không ai sửa hay ghi đè được.</span>
+        <span className="muted small-text">{t("Khoá bằng SHA-256, không ai sửa hay ghi đè được.", "Sealed with SHA-256; no one can edit or overwrite it.")}</span>
         <button
           type="button"
           className="ghost small"
@@ -274,10 +299,10 @@ function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
             setOpen(false);
           }}
         >
-          Huỷ
+          {t("Huỷ", "Cancel")}
         </button>
         <button className="small" disabled={!file}>
-          Nộp minh chứng
+          {t("Nộp minh chứng", "Submit evidence")}
         </button>
       </div>
     </form>
@@ -293,12 +318,13 @@ const TONE: Record<Payout["status"], { tone: string; icon: string }> = {
 
 /** One payout, laid out like a notification: status icon, title and tag, meta line, content boxes. */
 function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; state: AppState; act: Act }) {
+  const t = useT();
   const me = state.me.id;
   const recipient = fund.recipients.find((r) => r.id === payout.recipientId);
   const iAmRecipient = recipient?.userId === me;
   const { tone, icon } = TONE[payout.status];
   const mayUpload = payout.proposerId === me;
-  const evidenceLabel = fund.kind === "group" ? EVIDENCE[payout.evidenceStatus].replace("hội đồng", "thành viên") : EVIDENCE[payout.evidenceStatus];
+  const evidenceLabel = t(...((fund.kind === "group" && EVIDENCE_GROUP[payout.evidenceStatus]) || EVIDENCE[payout.evidenceStatus]));
 
   return (
     <article className="feed-item">
@@ -310,10 +336,10 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
           <b>
             {vnd(payout.amount)} · {payout.reason}
           </b>
-          <span className={`tag-pill ${tone}`}>{STATUS[payout.status]}</span>
+          <span className={`tag-pill ${tone}`}>{t(...STATUS[payout.status])}</span>
         </div>
         <div className="feed-meta">
-          {when(payout.createdAt)} • Đề xuất bởi {nameOf(state, payout.proposerId)} • Chi cho{" "}
+          {when(payout.createdAt)} • {t("Đề xuất bởi", "Proposed by")} {nameOf(state, payout.proposerId)} • {t("Chi cho", "Pay to")}{" "}
           {recipient ? `${recipient.name} (${recipient.account})` : payout.payee}
         </div>
 
@@ -321,7 +347,7 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
           <Votes state={state} approvals={payout.approvals} rejections={payout.rejections} quorum={fund.rules.quorum} />
           {payout.recipientConfirmedAt && (
             <p className="muted">
-              <Mark kind="ok" /> Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}
+              <Mark kind="ok" /> {t("Người nhận xác nhận lúc", "Recipient confirmed at")} {when(payout.recipientConfirmedAt)}
             </p>
           )}
           <div className="row">
@@ -329,24 +355,24 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
               <VoteButtons
                 onApprove={() => act({ action: "approve_payout", payoutId: payout.id })}
                 onReject={() => {
-                  const reason = askReason("lệnh chi này");
+                  const reason = askReason(t("Lý do từ chối lệnh chi này:", "Why are you rejecting this payout?"));
                   if (reason) act({ action: "reject_payout", payoutId: payout.id, reason });
                 }}
               />
             )}
             {(payout.status === "awaiting_recipient" || (iAmRecipient && payout.status === "pending")) && (
               <button className="small" onClick={() => act({ action: "confirm_receipt", payoutId: payout.id })}>
-                Người nhận xác nhận
+                {t("Người nhận xác nhận", "Confirm receipt")}
               </button>
             )}
             {payout.status === "pending" && state.me.platformAdmin && (
               <button className="small ghost bad-outline" onClick={() => act({ action: "forge_approval", payoutId: payout.id })}>
-                Giả lập: chèn lượt duyệt mạo danh vào DB
+                {t("Giả lập: chèn lượt duyệt mạo danh vào DB", "Simulate: insert a forged approval into the DB")}
               </button>
             )}
             {payout.status === "executed" && (
               <Link href={`/proof/${payout.id}`} className="link-more">
-                Xem lại lệnh chi và minh chứng →
+                {t("Xem lại lệnh chi và minh chứng →", "Review payout and evidence →")}
               </Link>
             )}
           </div>
@@ -356,7 +382,7 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
           <div className="feed-box">
             <div className="row between">
               <b>{evidenceLabel}</b>
-              {payout.evidence.length > 0 && <span className="muted small-text">{payout.evidence.length} file</span>}
+              {payout.evidence.length > 0 && <span className="muted small-text">{payout.evidence.length} {t("file", payout.evidence.length === 1 ? "file" : "files")}</span>}
             </div>
             {payout.evidenceStatus !== "none" && (
               <Votes state={state} approvals={payout.evidenceApprovals} rejections={payout.evidenceRejections} quorum={fund.rules.quorum} />
@@ -384,17 +410,17 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
             <div className="row">
               {payout.evidenceStatus === "submitted" && (
                 <VoteButtons
-                  approveLabel="Duyệt minh chứng"
+                  approveLabel={t("Duyệt minh chứng", "Approve evidence")}
                   onApprove={() => act({ action: "approve_evidence", payoutId: payout.id })}
                   onReject={() => {
-                    const reason = askReason("minh chứng này");
+                    const reason = askReason(t("Lý do từ chối minh chứng này:", "Why are you rejecting this evidence?"));
                     if (reason) act({ action: "reject_evidence", payoutId: payout.id, reason });
                   }}
                 />
               )}
               {payout.evidence.length > 0 && state.me.platformAdmin && (
                 <button className="small ghost bad-outline" onClick={() => act({ action: "tamper_evidence", payoutId: payout.id })}>
-                  Giả lập: sửa file hoá đơn trên máy chủ
+                  {t("Giả lập: sửa file hoá đơn trên máy chủ", "Simulate: tamper with the invoice on the server")}
                 </button>
               )}
             </div>
@@ -407,44 +433,71 @@ function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; 
 }
 
 function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleChange[]; state: AppState; act: Act }) {
+  const t = useT();
   const [quorum, setQuorum] = useState("1");
   const [name, setName] = useState("");
   const [account, setAccount] = useState("");
   const describe = (c: RuleChange) =>
     c.spec.type === "set_quorum"
-      ? `Đổi quorum thành ${c.spec.quorum}`
+      ? t(`Đổi quorum thành ${c.spec.quorum}`, `Set quorum to ${c.spec.quorum}`)
       : c.spec.type === "add_recipient"
-        ? `Thêm người nhận "${c.spec.name}" (${c.spec.account})`
-        : `Đóng chiến dịch và hoàn tiền: ${c.spec.reason}`;
+        ? t(`Thêm người nhận "${c.spec.name}" (${c.spec.account})`, `Add recipient "${c.spec.name}" (${c.spec.account})`)
+        : t(`Đóng chiến dịch và hoàn tiền: ${c.spec.reason}`, `Close and refund the campaign: ${c.spec.reason}`);
   const STATUS_LABEL: Record<string, React.ReactNode> = {
     applied: (
       <>
-        <Mark kind="ok" /> đã áp dụng
+        <Mark kind="ok" /> {t("đã áp dụng", "applied")}
       </>
     ),
     rejected: (
       <>
-        <Mark kind="bad" /> bị từ chối
+        <Mark kind="bad" /> {t("bị từ chối", "rejected")}
       </>
     ),
   };
   return (
     <section className="card">
-      <h3>Luật quỹ</h3>
+      <h3>{t("Luật quỹ", "Fund rules")}</h3>
       <ul>
         <li>
-          {fund.kind === "group" ? "Thành viên nào cũng tạo được lệnh chi; " : ""}Mỗi khoản chi cần <b>{fund.rules.quorum}</b> người duyệt (
-          {fund.kind === "group" ? "thành viên" : "hội đồng giám sát"}). Người tạo lệnh không tự duyệt.
+          {fund.kind === "group"
+            ? t(
+                `Thành viên nào cũng tạo được lệnh chi; mỗi khoản chi cần ${fund.rules.quorum} thành viên khác duyệt.`,
+                `Any member can create a payout; each needs ${fund.rules.quorum} other members to approve.`
+              )
+            : t(
+                `Mỗi khoản chi cần ${fund.rules.quorum} thành viên hội đồng giám sát duyệt. Người đề xuất không tự duyệt.`,
+                `Each payout needs ${fund.rules.quorum} oversight council members to approve. The proposer cannot approve.`
+              )}
         </li>
-        {fund.rules.largeAmount && <li>Khoản trên {vnd(fund.rules.largeAmount)} cần người nhận xác nhận.</li>}
-        {fund.rules.evidenceBeforeNext && <li>Đợt chi trước chưa có minh chứng được duyệt thì đợt sau bị khoá.</li>}
-        {fund.kind === "charity" && <li>Chỉ chuyển cho người nhận đã đăng ký.</li>}
-        <li>Sửa luật cũng cần {fund.rules.quorum} người duyệt. Admin nền tảng không có quyền.</li>
+        {fund.rules.largeAmount && (
+          <li>
+            {t(
+              `Khoản trên ${vnd(fund.rules.largeAmount)} cần người nhận xác nhận.`,
+              `Payouts above ${vnd(fund.rules.largeAmount)} need the recipient's confirmation.`
+            )}
+          </li>
+        )}
+        {fund.rules.evidenceBeforeNext && (
+          <li>
+            {t(
+              "Đợt chi trước chưa có minh chứng được duyệt thì đợt sau bị khoá.",
+              "The next payout stays locked until the previous one's evidence is approved."
+            )}
+          </li>
+        )}
+        {fund.kind === "charity" && <li>{t("Chỉ chuyển cho người nhận đã đăng ký.", "Money only goes to registered recipients.")}</li>}
+        <li>
+          {t(
+            `Sửa luật cũng cần ${fund.rules.quorum} người duyệt. Admin nền tảng không có quyền.`,
+            `Changing the rules also needs ${fund.rules.quorum} approvals. The platform admin has no say.`
+          )}
+        </li>
       </ul>
 
       {changes.length > 0 && (
         <>
-          <h4>Đề xuất</h4>
+          <h4>{t("Đề xuất", "Proposals")}</h4>
           <ul>
             {changes.map((c) => (
               <li key={c.id} className="stack-sm">
@@ -457,7 +510,7 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
                     <VoteButtons
                       onApprove={() => act({ action: "approve_rule", changeId: c.id })}
                       onReject={() => {
-                        const reason = askReason("đề xuất này");
+                        const reason = askReason(t("Lý do từ chối đề xuất này:", "Why are you rejecting this proposal?"));
                         if (reason) act({ action: "reject_rule", changeId: c.id, reason });
                       }}
                     />
@@ -477,10 +530,10 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
         }}
       >
         <label>
-          Đề xuất quorum mới
+          {t("Đề xuất quorum mới", "Propose a new quorum")}
           <input type="number" min={1} value={quorum} onChange={(e) => setQuorum(e.target.value)} />
         </label>
-        <button>Đề xuất</button>
+        <button>{t("Đề xuất", "Propose")}</button>
       </form>
       {fund.kind === "charity" && (
         <form
@@ -490,9 +543,9 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
             act({ action: "propose_rule", fundId: fund.id, spec: { type: "add_recipient", name, account } });
           }}
         >
-          <input placeholder="Tên người nhận mới" value={name} onChange={(e) => setName(e.target.value)} />
-          <input placeholder="Số tài khoản" value={account} onChange={(e) => setAccount(e.target.value)} />
-          <button>Đề xuất thêm người nhận</button>
+          <input placeholder={t("Tên người nhận mới", "New recipient name")} value={name} onChange={(e) => setName(e.target.value)} />
+          <input placeholder={t("Số tài khoản", "Account number")} value={account} onChange={(e) => setAccount(e.target.value)} />
+          <button>{t("Đề xuất thêm người nhận", "Propose adding recipient")}</button>
         </form>
       )}
     </section>
@@ -501,22 +554,25 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
 
 /** Closing a charity campaign: by council quorum, or by anyone once the deadline has passed. */
 function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: RuleChange[]; state: AppState; act: Act }) {
-  const [reason, setReason] = useState("Người kêu gọi không nộp minh chứng, mất liên lạc");
+  const t = useT();
+  const [reason, setReason] = useState(t("Người kêu gọi không nộp minh chứng, mất liên lạc", "Organiser stopped submitting evidence and cannot be reached"));
   if (fund.closed) {
     const total = fund.closed.refunds.reduce((s, r) => s + r.amount, 0);
     return (
       <section className="card">
-        <h3>Chiến dịch đã đóng · đã hoàn {vnd(total)}</h3>
+        <h3>{t(`Chiến dịch đã đóng · đã hoàn ${vnd(total)}`, `Campaign closed · ${vnd(total)} refunded`)}</h3>
         <p className="muted">
-          {when(fund.closed.at)} · {fund.closed.how === "expired" ? "Tự động khi hết hạn" : "Hội đồng duyệt đóng"} · Lý do: {fund.closed.reason}
+          {when(fund.closed.at)} ·{" "}
+          {fund.closed.how === "expired" ? t("Tự động khi hết hạn", "Automatically at the deadline") : t("Hội đồng duyệt đóng", "Closed by council vote")} ·{" "}
+          {t("Lý do", "Reason")}: {fund.closed.reason}
         </p>
         <table>
           <thead>
             <tr>
-              <th>Nhà hảo tâm</th>
-              <th>Đã góp</th>
-              <th>Được hoàn</th>
-              <th>Về tài khoản đã góp</th>
+              <th>{t("Nhà hảo tâm", "Donor")}</th>
+              <th>{t("Đã góp", "Gave")}</th>
+              <th>{t("Được hoàn", "Refunded")}</th>
+              <th>{t("Về tài khoản đã góp", "To the account they paid from")}</th>
             </tr>
           </thead>
           <tbody>
@@ -539,25 +595,30 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
   const expired = !!fund.deadline && new Date(fund.deadline) <= new Date();
   return (
     <section className="card">
-      <h3>Đóng chiến dịch và hoàn tiền</h3>
+      <h3>{t("Đóng chiến dịch và hoàn tiền", "Close and refund")}</h3>
       <ul>
         <li>
-          Hạn chiến dịch: <b>{fund.deadline ? new Date(fund.deadline).toLocaleDateString("vi-VN") : "không có"}</b>. Hết hạn thì ai cũng bấm hoàn tiền được, không
-          cần ai duyệt.
+          {t("Hạn chiến dịch", "Deadline")}: <b>{fund.deadline ? new Date(fund.deadline).toLocaleDateString("vi-VN") : t("không có", "none")}</b>.{" "}
+          {t("Hết hạn thì ai cũng bấm hoàn tiền được, không cần ai duyệt.", "After it, anyone can trigger the refund; no approval needed.")}
         </li>
-        <li>Đóng sớm cần {fund.rules.quorum} thành viên hội đồng duyệt.</li>
-        <li>Số dư còn lại được hoàn theo tỷ lệ mỗi người đã góp, và chỉ về đúng tài khoản đã góp.</li>
+        <li>{t(`Đóng sớm cần ${fund.rules.quorum} thành viên hội đồng duyệt.`, `Closing early needs ${fund.rules.quorum} council approvals.`)}</li>
+        <li>
+          {t(
+            "Số dư còn lại được hoàn theo tỷ lệ mỗi người đã góp, và chỉ về đúng tài khoản đã góp.",
+            "The remaining balance is refunded in proportion to what each donor gave, only to the account they paid from."
+          )}
+        </li>
       </ul>
       {changes.length > 0 && (
         <ul>
           {changes.map((c) => (
             <li key={c.id} className="stack-sm">
               <span>
-                “{c.spec.type === "close_refund" && c.spec.reason}” · đề xuất bởi {nameOf(state, c.proposerId)}
+                “{c.spec.type === "close_refund" && c.spec.reason}” · {t("đề xuất bởi", "proposed by")} {nameOf(state, c.proposerId)}
                 {c.status === "rejected" && (
                   <>
                     {" "}
-                    · <Mark kind="bad" /> bị từ chối
+                    · <Mark kind="bad" /> {t("bị từ chối", "rejected")}
                   </>
                 )}
               </span>
@@ -565,10 +626,10 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
               {c.status === "pending" && (
                 <div className="row">
                   <VoteButtons
-                    approveLabel="Duyệt đóng và hoàn tiền"
+                    approveLabel={t("Duyệt đóng và hoàn tiền", "Approve closing and refund")}
                     onApprove={() => act({ action: "approve_rule", changeId: c.id })}
                     onReject={() => {
-                      const reason = askReason("việc đóng chiến dịch");
+                      const reason = askReason(t("Lý do từ chối việc đóng chiến dịch:", "Why are you rejecting closing the campaign?"));
                       if (reason) act({ action: "reject_rule", changeId: c.id, reason });
                     }}
                   />
@@ -585,11 +646,11 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
           act({ action: "propose_rule", fundId: fund.id, spec: { type: "close_refund", reason } });
         }}
       >
-        <input value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Lý do đóng chiến dịch" />
-        <button>Đề xuất đóng và hoàn tiền</button>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} aria-label={t("Lý do đóng chiến dịch", "Reason for closing")} />
+        <button>{t("Đề xuất đóng và hoàn tiền", "Propose closing and refund")}</button>
       </form>
       <button className={expired ? "" : "ghost"} onClick={() => act({ action: "refund_expired", fundId: fund.id })}>
-        Hoàn tiền vì hết hạn
+        {t("Hoàn tiền vì hết hạn", "Refund: deadline passed")}
       </button>
     </section>
   );
@@ -597,10 +658,10 @@ function CloseCampaign({ fund, changes, state, act }: { fund: Fund; changes: Rul
 
 // "Đã chi" is where executed payouts are reviewed, with their evidence.
 const FILTERS = [
-  ["all", "Tất cả"],
-  ["pending", "Chờ duyệt"],
-  ["executed", "Đã chi"],
-  ["rejected", "Bị từ chối"],
+  ["all", ["Tất cả", "All"]],
+  ["pending", ["Chờ duyệt", "Pending"]],
+  ["executed", ["Đã chi", "Paid"]],
+  ["rejected", ["Bị từ chối", "Rejected"]],
 ] as const;
 type Filter = (typeof FILTERS)[number][0];
 const FILTER_TEST: Record<Filter, (p: Payout) => boolean> = {
@@ -611,13 +672,15 @@ const FILTER_TEST: Record<Filter, (p: Payout) => boolean> = {
 };
 
 const TABS = [
-  ["payouts", "Khoản chi"],
-  ["log", "Nhật ký"],
-  ["rules", "Luật và thành viên"],
+  ["payouts", ["Khoản chi", "Payouts"]],
+  ["log", ["Nhật ký", "Audit log"]],
+  ["rules", ["Luật và thành viên", "Rules & members"]],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
 function FundView({ id }: { id: string }) {
+  const t = useT();
+  const { lang } = useLang();
   const { state, error, notice, setNotice, act } = useAppState();
   const [tab, setTab] = useState<Tab>("payouts");
   const [filter, setFilter] = useState<Filter>("all");
@@ -625,12 +688,14 @@ function FundView({ id }: { id: string }) {
   // A link to /funds/<id>#log opens the log tab.
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (TABS.some(([t]) => t === hash)) setTab(hash as Tab);
+    if (TABS.some(([key]) => key === hash)) setTab(hash as Tab);
   }, []);
   if (error) return <p className="error">{error}</p>;
-  if (!state) return <p className="muted">Đang tải…</p>;
+  if (!state) return <p className="muted">{t("Đang tải…", "Loading…")}</p>;
   const fund = state.funds.find((f) => f.id === id);
-  if (!fund) return <p className="error">Không tìm thấy quỹ.</p>;
+  if (!fund) return <p className="error">{t("Không tìm thấy quỹ.", "Fund not found.")}</p>;
+  const text = fundText(fund, lang);
+  const proposeLabel = fund.kind === "group" ? t("Tạo lệnh chi", "Create payout") : t("Đề xuất giải ngân", "Propose disbursement");
 
   const myRole = roleOf(fund, state.me.id);
   const payouts = state.payouts.filter((p) => p.fundId === fund.id).reverse();
@@ -645,37 +710,39 @@ function FundView({ id }: { id: string }) {
     <>
       <NoticeBar notice={notice} onClose={() => setNotice(null)} />
       <section className="card hero">
-        <span className="tag">{fund.kind === "group" ? "Quỹ nhóm" : "Chiến dịch từ thiện"}</span>
+        <span className="tag">{fund.kind === "group" ? t("Quỹ nhóm", "Group fund") : t("Chiến dịch từ thiện", "Charity campaign")}</span>
         <h2>
-          {fund.name} {fund.closed && <span className="pill">Đã đóng · đã hoàn tiền</span>}
+          {text.name} {fund.closed && <span className="pill">{t("Đã đóng · đã hoàn tiền", "Closed · refunded")}</span>}
         </h2>
-        <p className="muted">{fund.description}</p>
+        <p className="muted">{text.description}</p>
         <div className="hero-stats">
           <div>
-            <small className="muted">Số dư</small>
+            <small className="muted">{t("Số dư", "Balance")}</small>
             <b>{vnd(fund.balance)}</b>
           </div>
           {fund.goal && (
             <div>
-              <small className="muted">Đã góp / mục tiêu</small>
+              <small className="muted">{t("Đã góp / mục tiêu", "Raised / goal")}</small>
               <b>
                 {vnd(raised)} / {vnd(fund.goal)}
               </b>
             </div>
           )}
           <div>
-            <small className="muted">Cần duyệt</small>
-            <b>
-              {fund.rules.quorum} người
-            </b>
+            <small className="muted">{t("Cần duyệt", "Approvals needed")}</small>
+            <b>{t(`${fund.rules.quorum} người`, `${fund.rules.quorum} people`)}</b>
           </div>
         </div>
         <p>
-          Bạn là: <b>{myRole ? ROLE_LABEL[myRole] : state.me.platformAdmin ? "Admin nền tảng" : "Người xem"}</b>
+          {t("Bạn là", "You are")}:{" "}
+          <b>{myRole ? t(...ROLE_LABEL[myRole]) : state.me.platformAdmin ? t("Admin nền tảng", "Platform admin") : t("Người xem", "Viewer")}</b>
           {organiser && (
             <>
               {" "}
-              · Người kêu gọi: <Link href={`/organiser/${organiser.userId}`}>{nameOf(state, organiser.userId)} (hồ sơ uy tín)</Link>
+              · {t("Người kêu gọi", "Organiser")}:{" "}
+              <Link href={`/organiser/${organiser.userId}`}>
+                {nameOf(state, organiser.userId)} ({t("hồ sơ uy tín", "reputation")})
+              </Link>
             </>
           )}
         </p>
@@ -683,24 +750,26 @@ function FundView({ id }: { id: string }) {
           <div className="hero-actions">
             <Contribute fund={fund} act={act} />
             <button onClick={() => setProposing(true)}>
-              <Icon name="plus" size={16} /> {fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}
+              <Icon name="plus" size={16} /> {proposeLabel}
             </button>
           </div>
         )}
       </section>
 
       {proposing && (
-        <Modal title={fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"} onClose={() => setProposing(false)}>
+        <Modal title={proposeLabel} onClose={() => setProposing(false)}>
           <ProposeForm fund={fund} act={act} onDone={() => setProposing(false)} />
         </Modal>
       )}
 
       <div className="tabs" role="tablist">
-        {TABS.map(([t, label]) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "tab active" : "tab"} onClick={() => setTab(t)}>
-            {label}
-            {t === "payouts" && <span className="count">{payouts.length}</span>}
-            {t === "log" && <span className={blocked ? "count bad" : "count"}>{blocked ? `${blocked} bị chặn` : log.length}</span>}
+        {TABS.map(([key, label]) => (
+          <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "tab active" : "tab"} onClick={() => setTab(key)}>
+            {t(...(label as Text))}
+            {key === "payouts" && <span className="count">{payouts.length}</span>}
+            {key === "log" && (
+              <span className={blocked ? "count bad" : "count"}>{blocked ? t(`${blocked} bị chặn`, `${blocked} blocked`) : log.length}</span>
+            )}
           </button>
         ))}
       </div>
@@ -709,15 +778,15 @@ function FundView({ id }: { id: string }) {
         <div className={fund.kind === "charity" ? "cols" : ""}>
           <section className="card feed">
             <div className="feed-head">
-              <div className="filters" role="group" aria-label="Lọc lệnh chi">
+              <div className="filters" role="group" aria-label={t("Lọc lệnh chi", "Filter payouts")}>
                 {FILTERS.map(([f, label]) => (
                   <button key={f} className={filter === f ? "chip-btn active" : "chip-btn"} onClick={() => setFilter(f)}>
-                    {label} <span className="count">{payouts.filter(FILTER_TEST[f]).length}</span>
+                    {t(...(label as Text))} <span className="count">{payouts.filter(FILTER_TEST[f]).length}</span>
                   </button>
                 ))}
               </div>
             </div>
-            {shown.length === 0 && <p className="muted feed-empty">Không có lệnh chi nào ở mục này.</p>}
+            {shown.length === 0 && <p className="muted feed-empty">{t("Không có lệnh chi nào ở mục này.", "No payouts here.")}</p>}
             {shown.map((p) => (
               <PayoutItem key={p.id} fund={fund} payout={p} state={state} act={act} />
             ))}
@@ -733,7 +802,10 @@ function FundView({ id }: { id: string }) {
       {tab === "log" && (
         <>
           <p className="muted">
-            Nhật ký của riêng quỹ này: {log.length} hoạt động, {blocked} lần thử vượt quyền bị chặn.
+            {t(
+              `Nhật ký của riêng quỹ này: ${log.length} hoạt động, ${blocked} lần thử vượt quyền bị chặn.`,
+              `This fund's own log: ${log.length} actions, ${blocked} unauthorised attempts blocked.`
+            )}
           </p>
           <LogTable state={state} entries={log} />
         </>
@@ -745,7 +817,7 @@ function FundView({ id }: { id: string }) {
           <aside>
             {fund.kind === "charity" && (
               <section className="card">
-                <h3>Người nhận đã đăng ký</h3>
+                <h3>{t("Người nhận đã đăng ký", "Registered recipients")}</h3>
                 <ul>
                   {fund.recipients.map((r) => (
                     <li key={r.id}>
@@ -756,11 +828,11 @@ function FundView({ id }: { id: string }) {
               </section>
             )}
             <section className="card">
-              <h3>Thành viên</h3>
+              <h3>{t("Thành viên", "Members")}</h3>
               <ul>
                 {fund.members.map((m) => (
                   <li key={m.userId}>
-                    {nameOf(state, m.userId)} · {ROLE_LABEL[m.role]}
+                    {nameOf(state, m.userId)} · {t(...ROLE_LABEL[m.role])}
                   </li>
                 ))}
               </ul>

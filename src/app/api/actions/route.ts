@@ -1,5 +1,6 @@
 import { withActor } from "@/lib/actor";
 import { SIM_TIDE } from "@/lib/simtide/realm";
+import { L } from "@/lib/lang";
 import * as engine from "@/lib/fund/engine";
 import { loadDB, newId, saveDB } from "@/lib/fund/store";
 import type { DB, User } from "@/lib/fund/types";
@@ -31,7 +32,7 @@ async function run(db: DB, actor: User, body: Body, file?: File, tideToken?: str
     case "confirm_receipt":
       return engine.confirmByRecipient(db, actor, body.payoutId);
     case "submit_evidence": {
-      if (!file) throw new engine.Blocked("Cần đính kèm file minh chứng.");
+      if (!file) throw new engine.Blocked(L("Cần đính kèm file minh chứng.", "Attach an evidence file."));
       const data = Buffer.from(await file.arrayBuffer());
       return engine.submitEvidence(db, actor, body.payoutId, { name: file.name, data }, body.kind ?? "other", body.note ?? "");
     }
@@ -42,14 +43,14 @@ async function run(db: DB, actor: User, body: Body, file?: File, tideToken?: str
     case "approve_rule":
       return engine.approveRuleChange(db, actor, body.changeId, tideToken);
     case "tamper_evidence":
-      if (!SIM_TIDE) throw new engine.Blocked("Chỉ có trong chế độ demo.");
+      if (!SIM_TIDE) throw new engine.Blocked(L("Chỉ có trong chế độ demo.", "Demo mode only."));
       return engine.tamperEvidence(db, body.payoutId);
     case "forge_approval":
       // Demo of an insider attack: only the platform admin may trigger it, and only in the demo.
-      if (!SIM_TIDE || !actor.platformAdmin) throw new engine.Blocked("Chỉ admin nền tảng, trong chế độ demo.");
+      if (!SIM_TIDE || !actor.platformAdmin) throw new engine.Blocked(L("Chỉ admin nền tảng, trong chế độ demo.", "Platform admin only, in demo mode."));
       return engine.forgeApproval(db, body.payoutId);
     default:
-      throw new engine.Blocked("Hành động không hợp lệ.");
+      throw new engine.Blocked(L("Hành động không hợp lệ.", "Invalid action."));
   }
 }
 
