@@ -26,9 +26,10 @@
   --text: #e6e9ee;
   --muted: #9aa3ae;
   --line: #2a313b;
-  --accent: #5b9bff;
-  --accent-ink: #0b1220;
-  --accent-soft: #17263d;
+  /* Dark theme: neutral gray accent with black text on buttons, no blue. */
+  --accent: #d4d7dd;
+  --accent-ink: #0b0d10;
+  --accent-soft: #262c35;
   --hover: #1f2630;
   --ok-bg: #14301f;
   --ok: #6fd6a0;
