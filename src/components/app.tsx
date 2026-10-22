@@ -296,7 +296,10 @@ export function Header() {
         {session.authenticated ? (
           <>
             <Link href="/tide" className="chip" title="Xem token và vai trò TideCloak">
-              <Icon name="key" size={15} /> {session.username}
+              <span className="avatar" aria-hidden="true">
+                {(session.username ?? "?").charAt(0).toUpperCase()}
+              </span>
+              {session.username}
             </Link>
             <button className="ghost small" onClick={session.logout}>
               {session.demo ? "Đổi tài khoản" : "Đăng xuất"}
