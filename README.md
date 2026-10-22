@@ -56,19 +56,18 @@ npm run dev
 
 | Step | Act as | Action | Expected |
 |---|---|---|---|
-| 1 | An (treasurer) | Withdraw 10M from "Du lịch Đà Lạt" | Blocked |
-| 2 | An (or any member) | Create a 3M payout | Pending 0/3 |
+| 1 | Hoa (not in this fund) | "Tạo lệnh chi" on "Du lịch Đà Lạt" | Blocked: no `fund:f-dalat:*` role in her token |
+| 2 | An (or any member) | "Tạo lệnh chi" opens a dialog; create a 3M payout | Pending 0/3 |
 | 3 | Admin | Approve it | Blocked |
 | 4 | Bình, Chi, Dũng | Approve | Executed |
 | 5 | Chi, Dũng | Reject another payout, with a reason | Rejected once quorum is out of reach |
 | 6 | Donors | Contribute to Nậm Cang | Balance rises |
-| 7 | Lan (organiser) | Pay 50M to her own account | Blocked |
+| 7 | Lan (organiser) | "Đề xuất giải ngân" to "Tài khoản khác…" (her own account) | Blocked |
 | 8 | Lan | Pay 80M to Minh Phát; Hoa, Khoa, Minh approve; Minh Phát confirms | Executed |
 | 9 | Lan | Propose a second payout | Blocked until evidence is approved |
-| 10 | Lan, then council | Upload the invoice; 3 approve | Next payout unlocked |
-| 11 | Lan | Send the campaign's refund to her own account | Blocked |
-| 12 | Council | Propose closing the campaign; 3 approve | Remainder refunded pro rata, only to each donor's own account |
-| 13 | Admin | On a pending payout, "Giả lập: chèn lượt duyệt mạo danh vào DB" | Vote shown with an invalid Tide signature; never counted |
+| 10 | Lan, then council | "Thêm minh chứng": drop the invoice photo; 3 approve | Next payout unlocked |
+| 11 | Council | Propose closing the campaign; 3 approve | Remainder refunded pro rata, only to each donor's own account |
+| 12 | Admin | On a pending payout, "Giả lập: chèn lượt duyệt mạo danh vào DB" | Vote shown with an invalid Tide signature; never counted |
 
 Each fund page has a **Nhật ký** (audit log) tab listing every attempt, allowed or blocked, and each executed payout has a public proof page.
 

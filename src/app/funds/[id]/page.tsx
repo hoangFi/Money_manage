@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppState, LogTable, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
+import { AppState, Icon, LogTable, nameOf, NoticeBar, RequireLogin, ROLE_LABEL, roleOf, useAppState, vnd, when } from "@/components/app";
 import type { Approval, Fund, Payout, Rejection, RuleChange } from "@/lib/fund/types";
 
 type Act = (body: Record<string, unknown> | FormData) => Promise<boolean>;
@@ -71,37 +71,41 @@ function Contribute({ fund, act }: { fund: Fund; act: Act }) {
   const [amount, setAmount] = useState("500000");
   return (
     <form
-      className="row"
+      className="contribute"
       onSubmit={(e) => {
         e.preventDefault();
         act({ action: "contribute", fundId: fund.id, amount: Number(amount) });
       }}
     >
       <input type="number" min={1000} step={1000} value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Số tiền góp" />
-      <button>Góp tiền (mock)</button>
+      <button className="ghost">Góp tiền (mock)</button>
     </form>
   );
 }
 
-function Withdraw({ fund, act }: { fund: Fund; act: Act }) {
-  const [amount, setAmount] = useState(fund.kind === "group" ? "10000000" : "50000000");
-  const [account, setAccount] = useState("Techcombank 1903 xxxx (tài khoản cá nhân)");
+/** Centered dialog; closes on the backdrop, the ✕ or Escape. */
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <form
-      className="row"
-      onSubmit={(e) => {
-        e.preventDefault();
-        act({ action: "withdraw", fundId: fund.id, amount: Number(amount), toAccount: account });
-      }}
-    >
-      <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Số tiền rút" />
-      <input value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Tài khoản nhận" />
-      <button className="danger">Rút thẳng về tài khoản này</button>
-    </form>
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{title}</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Đóng">
+            <Icon name="x" size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
   );
 }
 
-function Propose({ fund, act }: { fund: Fund; act: Act }) {
+function ProposeForm({ fund, act, onDone }: { fund: Fund; act: Act; onDone: () => void }) {
   const [amount, setAmount] = useState(fund.kind === "group" ? "3000000" : "80000000");
   const [reason, setReason] = useState(fund.kind === "group" ? "Đặt cọc homestay 2 đêm" : "Mua 200 bao xi măng, cát, thép");
   const [payee, setPayee] = useState("Homestay Đồi Thông");
@@ -110,9 +114,10 @@ function Propose({ fund, act }: { fund: Fund; act: Act }) {
   return (
     <form
       className="stack"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        act({
+        // Close either way: the notice bar says whether it went through or was blocked.
+        await act({
           action: "propose_payout",
           fundId: fund.id,
           amount: Number(amount),
@@ -121,14 +126,15 @@ function Propose({ fund, act }: { fund: Fund; act: Act }) {
           recipientId: recipientId === "__other" ? undefined : recipientId,
           toAccount: recipientId === "__other" ? other : undefined,
         });
+        onDone();
       }}
     >
       <label>
-        Số tiền
-        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        Số tiền (đ)
+        <input type="number" min={1000} step={1000} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
       </label>
       <label>
-        Lý do
+        Lý do chi
         <input value={reason} onChange={(e) => setReason(e.target.value)} />
       </label>
       {fund.kind === "group" ? (
@@ -157,18 +163,51 @@ function Propose({ fund, act }: { fund: Fund; act: Act }) {
           )}
         </>
       )}
-      <button>{fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}</button>
+      <p className="muted small-text">
+        Cần {fund.rules.quorum} {fund.kind === "group" ? "thành viên khác" : "thành viên hội đồng"} duyệt thì tiền mới được chuyển. Bạn không tự duyệt
+        lệnh của mình.
+      </p>
+      <div className="modal-actions">
+        <button type="button" className="ghost" onClick={onDone}>
+          Huỷ
+        </button>
+        <button>{fund.kind === "group" ? "Tạo lệnh chi" : "Gửi đề xuất"}</button>
+      </div>
     </form>
   );
 }
 
+const EVIDENCE_KINDS = [
+  ["invoice", "Hoá đơn"],
+  ["photo", "Ảnh thực tế"],
+  ["receipt", "Biên bản nhận"],
+  ["other", "Khác"],
+] as const;
+
 function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
+  const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [kind, setKind] = useState("invoice");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [kind, setKind] = useState<string>("invoice");
   const [note, setNote] = useState("");
+  const [dragging, setDragging] = useState(false);
+
+  const pick = (f: File | null) => {
+    setFile(f);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(f && f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+  };
+
+  if (!open) {
+    return (
+      <button className="ghost small" onClick={() => setOpen(true)}>
+        <Icon name="upload" size={15} /> Thêm minh chứng
+      </button>
+    );
+  }
   return (
     <form
-      className="stack evidence-form"
+      className="evidence-form"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!file) return;
@@ -179,122 +218,183 @@ function EvidenceForm({ payout, act }: { payout: Payout; act: Act }) {
         fd.set("note", note);
         fd.set("file", file);
         if (await act(fd)) {
-          setFile(null);
+          pick(null);
           setNote("");
-          (e.target as HTMLFormElement).reset();
+          setOpen(false);
         }
       }}
     >
-      <strong>Nộp minh chứng</strong>
-      <div className="row">
-        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Loại minh chứng">
-          <option value="invoice">Hoá đơn</option>
-          <option value="photo">Ảnh thực tế</option>
-          <option value="receipt">Biên bản nhận</option>
-          <option value="other">Khác</option>
-        </select>
-        <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="File minh chứng" />
+      <div className="seg" role="group" aria-label="Loại minh chứng">
+        {EVIDENCE_KINDS.map(([k, label]) => (
+          <button type="button" key={k} className={kind === k ? "seg-btn active" : "seg-btn"} onClick={() => setKind(k)}>
+            {label}
+          </button>
+        ))}
       </div>
+      <label
+        className={`dropzone${dragging ? " dragging" : ""}${file ? " has-file" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          pick(e.dataTransfer.files?.[0] ?? null);
+        }}
+      >
+        <input type="file" accept="image/*,application/pdf" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={preview} alt="Ảnh minh chứng đã chọn" />
+        ) : (
+          <span className="dz-icon">
+            <Icon name={file ? "file" : "upload"} size={22} />
+          </span>
+        )}
+        <span>
+          <b>{file ? file.name : "Kéo ảnh hoặc PDF vào đây"}</b>
+          <small className="muted">{file ? `${Math.ceil(file.size / 1024)} KB · bấm để chọn file khác` : "hoặc bấm để chọn file từ máy"}</small>
+        </span>
+      </label>
       <input placeholder="Ghi chú, ví dụ: Hoá đơn số 0012 của VLXD Minh Phát" value={note} onChange={(e) => setNote(e.target.value)} />
-      <button disabled={!file}>Nộp (khoá bằng SHA-256, không ghi đè được)</button>
+      <div className="modal-actions">
+        <span className="muted small-text">Khoá bằng SHA-256, không ai sửa hay ghi đè được.</span>
+        <button
+          type="button"
+          className="ghost small"
+          onClick={() => {
+            pick(null);
+            setOpen(false);
+          }}
+        >
+          Huỷ
+        </button>
+        <button className="small" disabled={!file}>
+          Nộp minh chứng
+        </button>
+      </div>
     </form>
   );
 }
 
-function PayoutCard({ fund, payout, state, act }: { fund: Fund; payout: Payout; state: AppState; act: Act }) {
+const TONE: Record<Payout["status"], { tone: string; icon: string }> = {
+  pending: { tone: "warn", icon: "clock" },
+  awaiting_recipient: { tone: "warn", icon: "user" },
+  executed: { tone: "ok", icon: "check" },
+  rejected: { tone: "bad", icon: "x" },
+};
+
+/** One payout, laid out like a notification: status icon, title and tag, meta line, content boxes. */
+function PayoutItem({ fund, payout, state, act }: { fund: Fund; payout: Payout; state: AppState; act: Act }) {
   const me = state.me.id;
   const recipient = fund.recipients.find((r) => r.id === payout.recipientId);
   const iAmRecipient = recipient?.userId === me;
   const myRole = roleOf(fund, me);
+  const { tone, icon } = TONE[payout.status];
+  const mayUpload =
+    myRole === "organiser" || payout.proposerId === me || (fund.kind === "group" && (myRole === "treasurer" || myRole === "member"));
+  const evidenceLabel = fund.kind === "group" ? EVIDENCE[payout.evidenceStatus].replace("hội đồng", "thành viên") : EVIDENCE[payout.evidenceStatus];
+
   return (
-    <article className={`card payout ${payout.status}`}>
-      <div className="row between">
-        <h4>
-          {vnd(payout.amount)} · {payout.reason}
-        </h4>
-        <span className="pill">{STATUS[payout.status]}</span>
-      </div>
-      <p className="muted">
-        Chi cho <b>{recipient ? `${recipient.name} (${recipient.account})` : payout.payee}</b> · đề xuất bởi {nameOf(state, payout.proposerId)} ·{" "}
-        {when(payout.createdAt)}
-      </p>
-      <Votes state={state} approvals={payout.approvals} rejections={payout.rejections} quorum={fund.rules.quorum} />
-      {payout.recipientConfirmedAt && <p>✔ Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}</p>}
+    <article className="feed-item">
+      <span className={`feed-icon ${tone}`}>
+        <Icon name={icon} size={18} />
+      </span>
+      <div className="feed-body">
+        <div className="feed-title">
+          <b>
+            {vnd(payout.amount)} · {payout.reason}
+          </b>
+          <span className={`tag-pill ${tone}`}>{STATUS[payout.status]}</span>
+        </div>
+        <div className="feed-meta">
+          {when(payout.createdAt)} • Đề xuất bởi {nameOf(state, payout.proposerId)} • Chi cho{" "}
+          {recipient ? `${recipient.name} (${recipient.account})` : payout.payee}
+        </div>
 
-      <div className="row">
-        {payout.status === "pending" && state.me.platformAdmin && (
-          <button className="small danger" onClick={() => act({ action: "forge_approval", payoutId: payout.id })}>
-            Giả lập: chèn lượt duyệt mạo danh vào DB
-          </button>
-        )}
-        {payout.status === "pending" && (
-          <VoteButtons
-            onApprove={() => act({ action: "approve_payout", payoutId: payout.id })}
-            onReject={() => {
-              const reason = askReason("lệnh chi này");
-              if (reason) act({ action: "reject_payout", payoutId: payout.id, reason });
-            }}
-          />
-        )}
-        {(payout.status === "awaiting_recipient" || (iAmRecipient && payout.status === "pending")) && (
-          <button onClick={() => act({ action: "confirm_receipt", payoutId: payout.id })}>Người nhận xác nhận</button>
-        )}
-        {payout.status === "executed" && <Link href={`/proof/${payout.id}`}>Xem lại lệnh chi và minh chứng →</Link>}
-      </div>
-
-      {payout.status === "executed" && (
-        <div className="evidence">
-          <p>
-            <b>{fund.kind === "group" ? EVIDENCE[payout.evidenceStatus].replace("hội đồng", "thành viên") : EVIDENCE[payout.evidenceStatus]}</b>
-            {fund.kind === "group" && payout.evidenceStatus === "none" && (
-              <span className="muted"> · tải hoá đơn hoặc ảnh để cả nhóm xem lại</span>
-            )}
-          </p>
-          {payout.evidenceStatus !== "none" && (
-            <Votes state={state} approvals={payout.evidenceApprovals} rejections={payout.evidenceRejections} quorum={fund.rules.quorum} />
-          )}
-          {payout.evidence.length > 0 && (
-            <div className="evidence-grid">
-              {payout.evidence.map((e) => (
-                <a key={e.id} className="evidence-thumb" href={`/api/public/evidence/${e.id}`} target="_blank" rel="noreferrer">
-                  {/\.(png|jpe?g|webp|gif)$/i.test(e.fileName) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/api/public/evidence/${e.id}`} alt={e.note || e.fileName} />
-                  ) : (
-                    <span className="file-icon">{e.fileName.split(".").pop()?.toUpperCase()}</span>
-                  )}
-                  <span>
-                    <b>{e.note || e.fileName}</b>
-                    <small className="muted">
-                      {nameOf(state, e.submittedBy)} · {when(e.submittedAt)} · <code>{e.sha256.slice(0, 10)}…</code>
-                    </small>
-                  </span>
-                </a>
-              ))}
-            </div>
-          )}
+        <div className="feed-box">
+          <Votes state={state} approvals={payout.approvals} rejections={payout.rejections} quorum={fund.rules.quorum} />
+          {payout.recipientConfirmedAt && <p className="muted">✔ Người nhận xác nhận lúc {when(payout.recipientConfirmedAt)}</p>}
           <div className="row">
-            {payout.evidenceStatus === "submitted" && (
+            {payout.status === "pending" && (
               <VoteButtons
-                approveLabel="Duyệt minh chứng"
-                onApprove={() => act({ action: "approve_evidence", payoutId: payout.id })}
+                onApprove={() => act({ action: "approve_payout", payoutId: payout.id })}
                 onReject={() => {
-                  const reason = askReason("minh chứng này");
-                  if (reason) act({ action: "reject_evidence", payoutId: payout.id, reason });
+                  const reason = askReason("lệnh chi này");
+                  if (reason) act({ action: "reject_payout", payoutId: payout.id, reason });
                 }}
               />
             )}
-            {payout.evidence.length > 0 && state.me.platformAdmin && (
-              <button className="danger" onClick={() => act({ action: "tamper_evidence", payoutId: payout.id })}>
-                Giả lập: sửa file hoá đơn trên máy chủ
+            {(payout.status === "awaiting_recipient" || (iAmRecipient && payout.status === "pending")) && (
+              <button className="small" onClick={() => act({ action: "confirm_receipt", payoutId: payout.id })}>
+                Người nhận xác nhận
               </button>
             )}
+            {payout.status === "pending" && state.me.platformAdmin && (
+              <button className="small ghost bad-outline" onClick={() => act({ action: "forge_approval", payoutId: payout.id })}>
+                Giả lập: chèn lượt duyệt mạo danh vào DB
+              </button>
+            )}
+            {payout.status === "executed" && (
+              <Link href={`/proof/${payout.id}`} className="link-more">
+                Xem lại lệnh chi và minh chứng →
+              </Link>
+            )}
           </div>
-          {(myRole === "organiser" || payout.proposerId === me || (fund.kind === "group" && (myRole === "treasurer" || myRole === "member"))) && (
-            <EvidenceForm payout={payout} act={act} />
-          )}
         </div>
-      )}
+
+        {payout.status === "executed" && (
+          <div className="feed-box">
+            <div className="row between">
+              <b>{evidenceLabel}</b>
+              {payout.evidence.length > 0 && <span className="muted small-text">{payout.evidence.length} file</span>}
+            </div>
+            {payout.evidenceStatus !== "none" && (
+              <Votes state={state} approvals={payout.evidenceApprovals} rejections={payout.evidenceRejections} quorum={fund.rules.quorum} />
+            )}
+            {payout.evidence.length > 0 && (
+              <div className="evidence-grid">
+                {payout.evidence.map((e) => (
+                  <a key={e.id} className="evidence-thumb" href={`/api/public/evidence/${e.id}`} target="_blank" rel="noreferrer">
+                    {/\.(png|jpe?g|webp|gif)$/i.test(e.fileName) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`/api/public/evidence/${e.id}`} alt={e.note || e.fileName} />
+                    ) : (
+                      <span className="file-icon">{e.fileName.split(".").pop()?.toUpperCase()}</span>
+                    )}
+                    <span>
+                      <b>{e.note || e.fileName}</b>
+                      <small className="muted">
+                        {nameOf(state, e.submittedBy)} · {when(e.submittedAt)} · <code>{e.sha256.slice(0, 10)}…</code>
+                      </small>
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+            <div className="row">
+              {payout.evidenceStatus === "submitted" && (
+                <VoteButtons
+                  approveLabel="Duyệt minh chứng"
+                  onApprove={() => act({ action: "approve_evidence", payoutId: payout.id })}
+                  onReject={() => {
+                    const reason = askReason("minh chứng này");
+                    if (reason) act({ action: "reject_evidence", payoutId: payout.id, reason });
+                  }}
+                />
+              )}
+              {payout.evidence.length > 0 && state.me.platformAdmin && (
+                <button className="small ghost bad-outline" onClick={() => act({ action: "tamper_evidence", payoutId: payout.id })}>
+                  Giả lập: sửa file hoá đơn trên máy chủ
+                </button>
+              )}
+            </div>
+            {mayUpload && <EvidenceForm payout={payout} act={act} />}
+          </div>
+        )}
+      </div>
     </article>
   );
 }
@@ -378,22 +478,6 @@ function RuleChanges({ fund, changes, state, act }: { fund: Fund; changes: RuleC
         </form>
       )}
     </section>
-  );
-}
-
-function RefundTo({ fund, act }: { fund: Fund; act: Act }) {
-  const [account, setAccount] = useState("Techcombank 1903 xxxx (Lan)");
-  return (
-    <form
-      className="row"
-      onSubmit={(e) => {
-        e.preventDefault();
-        act({ action: "refund_to", fundId: fund.id, toAccount: account });
-      }}
-    >
-      <input value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Tài khoản nhận tiền hoàn" />
-      <button className="danger">Chuyển tiền hoàn về tài khoản này</button>
-    </form>
   );
 }
 
@@ -514,6 +598,7 @@ function FundView({ id }: { id: string }) {
   const { state, error, notice, setNotice, act } = useAppState();
   const [tab, setTab] = useState<Tab>("payouts");
   const [filter, setFilter] = useState<Filter>("all");
+  const [proposing, setProposing] = useState(false);
   // A link to /funds/<id>#log opens the log tab.
   useEffect(() => {
     const hash = window.location.hash.slice(1);
@@ -542,12 +627,26 @@ function FundView({ id }: { id: string }) {
           {fund.name} {fund.closed && <span className="pill">Đã đóng · đã hoàn tiền</span>}
         </h2>
         <p className="muted">{fund.description}</p>
-        <p className="big">Số dư: {vnd(fund.balance)}</p>
-        {fund.goal && (
-          <p>
-            Đã góp {vnd(raised)} / mục tiêu {vnd(fund.goal)}
-          </p>
-        )}
+        <div className="hero-stats">
+          <div>
+            <small className="muted">Số dư</small>
+            <b>{vnd(fund.balance)}</b>
+          </div>
+          {fund.goal && (
+            <div>
+              <small className="muted">Đã góp / mục tiêu</small>
+              <b>
+                {vnd(raised)} / {vnd(fund.goal)}
+              </b>
+            </div>
+          )}
+          <div>
+            <small className="muted">Cần duyệt</small>
+            <b>
+              {fund.rules.quorum} người
+            </b>
+          </div>
+        </div>
         <p>
           Bạn là: <b>{myRole ? ROLE_LABEL[myRole] : state.me.platformAdmin ? "Admin nền tảng" : "Người xem"}</b>
           {organiser && (
@@ -557,8 +656,21 @@ function FundView({ id }: { id: string }) {
             </>
           )}
         </p>
-        {!fund.closed && <Contribute fund={fund} act={act} />}
+        {!fund.closed && (
+          <div className="hero-actions">
+            <Contribute fund={fund} act={act} />
+            <button onClick={() => setProposing(true)}>
+              <Icon name="plus" size={16} /> {fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}
+            </button>
+          </div>
+        )}
       </section>
+
+      {proposing && (
+        <Modal title={fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"} onClose={() => setProposing(false)}>
+          <ProposeForm fund={fund} act={act} onDone={() => setProposing(false)} />
+        </Modal>
+      )}
 
       <div className="tabs" role="tablist">
         {TABS.map(([t, label]) => (
@@ -571,37 +683,27 @@ function FundView({ id }: { id: string }) {
       </div>
 
       {tab === "payouts" && (
-        <div className="cols">
-          <div>
-            <div className="filters" role="group" aria-label="Lọc lệnh chi">
-              {FILTERS.map(([f, label]) => (
-                <button key={f} className={filter === f ? "chip-btn active" : "chip-btn"} onClick={() => setFilter(f)}>
-                  {label} <span className="count">{payouts.filter(FILTER_TEST[f]).length}</span>
-                </button>
-              ))}
+        <div className={fund.kind === "charity" ? "cols" : ""}>
+          <section className="card feed">
+            <div className="feed-head">
+              <div className="filters" role="group" aria-label="Lọc lệnh chi">
+                {FILTERS.map(([f, label]) => (
+                  <button key={f} className={filter === f ? "chip-btn active" : "chip-btn"} onClick={() => setFilter(f)}>
+                    {label} <span className="count">{payouts.filter(FILTER_TEST[f]).length}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            {shown.length === 0 && <p className="muted">Không có lệnh chi nào ở mục này.</p>}
+            {shown.length === 0 && <p className="muted feed-empty">Không có lệnh chi nào ở mục này.</p>}
             {shown.map((p) => (
-              <PayoutCard key={p.id} fund={fund} payout={p} state={state} act={act} />
+              <PayoutItem key={p.id} fund={fund} payout={p} state={state} act={act} />
             ))}
-          </div>
-          <aside>
-            {!fund.closed && (
-              <section className="card">
-                <h3>{fund.kind === "group" ? "Tạo lệnh chi" : "Đề xuất giải ngân"}</h3>
-                <Propose fund={fund} act={act} />
-              </section>
-            )}
-            {fund.kind === "charity" && (
+          </section>
+          {fund.kind === "charity" && (
+            <aside>
               <CloseCampaign fund={fund} changes={changes.filter((c) => c.spec.type === "close_refund")} state={state} act={act} />
-            )}
-            <section className="card warn">
-              <h3>Thử vượt quyền</h3>
-              <p className="muted">Ai thử cũng bị chặn, kể cả thủ quỹ, người kêu gọi và admin. Mọi lần thử đều vào nhật ký.</p>
-              <Withdraw fund={fund} act={act} />
-              {fund.kind === "charity" && <RefundTo fund={fund} act={act} />}
-            </section>
-          </aside>
+            </aside>
+          )}
         </div>
       )}
 

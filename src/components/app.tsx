@@ -117,7 +117,15 @@ export function useAppState() {
   return { session, state, error, notice, setNotice, refresh, act };
 }
 
+/** Result of the last action, as a toast in the bottom-right corner that hides itself. */
 export function NoticeBar({ notice, onClose }: { notice: Notice; onClose: () => void }) {
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(onClose, notice.ok ? 5000 : 9000);
+    return () => clearTimeout(t);
+    // Only a new notice restarts the timer; onClose is a fresh closure on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notice]);
   if (!notice) return null;
   return (
     <div className={`notice ${notice.ok ? "ok" : "blocked"}`} role="status">
@@ -141,6 +149,12 @@ const ICONS: Record<string, string> = {
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
   moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
   key: "M15 7a4 4 0 1 1-3.9 5H8v3H5v-3H3v-3h8.1A4 4 0 0 1 15 7z",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
+  check: "M4 12.5 9 17.5 20 6.5",
+  x: "M6 6l12 12M18 6 6 18",
+  plus: "M12 5v14M5 12h14",
+  upload: "M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
+  file: "M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5",
 };
 
 const THEME_KEY = "quy-chung-theme";
