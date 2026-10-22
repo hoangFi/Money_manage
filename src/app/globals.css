@@ -378,3 +378,38 @@ button.seg-btn.active { background: var(--card); color: var(--text); box-shadow:
 .signin h2 { margin: 12px 0 0; font-size: 20px; }
 .signin p { margin: 4px 0 16px; }
 .signin-icon { width: 56px; height: 56px; border-radius: 99px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+
+/* --- Entry and interaction effects ------------------------------------------ */
+/* Content fades up when a page or item first appears; lists stagger slightly.
+   Nothing moves for people who ask their OS for reduced motion. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-head, .card, .tabs, .feed-item, .signin-icon, .account { animation: fade-up .38s cubic-bezier(.2, .7, .2, 1) both; }
+  .tabs { animation-delay: .06s; }
+
+  .dash .card:nth-child(2), .grid .card:nth-child(2), .cols > aside .card { animation-delay: .06s; }
+  .dash .card:nth-child(3), .grid .card:nth-child(3) { animation-delay: .12s; }
+  .grid .card:nth-child(n + 4) { animation-delay: .16s; }
+  .feed-item:nth-of-type(2), .account:nth-of-type(2) { animation-delay: .04s; }
+  .feed-item:nth-of-type(3), .account:nth-of-type(3) { animation-delay: .08s; }
+  .feed-item:nth-of-type(4), .account:nth-of-type(4) { animation-delay: .12s; }
+  .feed-item:nth-of-type(n + 5), .account:nth-of-type(n + 5) { animation-delay: .16s; }
+
+  .modal-backdrop { animation: fade-in .18s ease-out both; }
+  .modal { animation: pop-in .22s cubic-bezier(.2, .8, .2, 1) both; }
+  .evidence-form, .evidence-thumb { animation: fade-up .25s ease-out both; }
+
+  button, .btn, .chip, .nav-item, .chip-btn, .tab, .task, .evidence-thumb {
+    transition: background-color .15s, border-color .15s, color .15s, box-shadow .15s, transform .12s, filter .15s;
+  }
+  button:active:not(:disabled), .btn:active { transform: scale(.97); }
+  .fund { transition: border-color .15s, box-shadow .2s, transform .2s; }
+  .fund:hover, .evidence-thumb:hover { transform: translateY(-2px); }
+  .feed-icon { transition: transform .2s; }
+  .feed-item:hover .feed-icon { transform: scale(1.06); }
+  .tab { transition: color .15s, border-color .25s; }
+  .bar div { transition: width .6s cubic-bezier(.2, .7, .2, 1); }
+}
