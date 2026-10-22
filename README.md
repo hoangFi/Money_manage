@@ -26,6 +26,10 @@ Members sign in with Tide; every API call carries a DPoP-bound token. Each appro
 
 Every shortcut fails and is logged: the treasurer withdrawing alone, the admin approving, the organiser paying or refunding herself. Then a 3-of-5 payout executes, its evidence is hashed, and closing a campaign refunds donors.
 
+## Demo video
+
+[demo/quy-chung-demo.mp4](demo/quy-chung-demo.mp4) (1:58, English captions, runs on the simulated TideCloak).
+
 ## Setup
 
 Requirements: Node.js 18+. For Tide sign-in also Docker Desktop, curl and jq (on Windows run the init script from Git Bash).
