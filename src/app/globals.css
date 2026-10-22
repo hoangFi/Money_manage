@@ -371,3 +371,9 @@ button.seg-btn.active { background: var(--card); color: var(--text); box-shadow:
 .mark.warn { color: var(--warn); }
 .mark.lock { color: var(--accent); }
 .notice-title { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* --- Signed-out prompt ------------------------------------------------------ */
+.card.signin { max-width: 400px; padding: 36px 28px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.signin h2 { margin: 12px 0 0; font-size: 20px; }
+.signin p { margin: 4px 0 16px; }
+.signin-icon { width: 56px; height: 56px; border-radius: 99px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }

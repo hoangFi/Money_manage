@@ -352,11 +352,13 @@ export function RequireLogin({ children }: { children: React.ReactNode }) {
   if (!session.ready) return <p className="muted">Đang tải…</p>;
   if (!session.authenticated) {
     return (
-      <section className="card center">
-        <h2>Tiền chung không ai ôm được</h2>
-        <p>Không ai, kể cả thủ quỹ, người kêu gọi hay admin, có thể một mình rút tiền hoặc sửa luật quỹ.</p>
+      <section className="card center signin">
+        <span className="signin-icon">
+          <Icon name="person" size={26} />
+        </span>
+        <h2>Vui lòng đăng nhập</h2>
+        <p className="muted">Đăng nhập để xem và quản lý quỹ của bạn.</p>
         <button onClick={session.login}>Đăng nhập với Tide</button>
-        {session.demo && <p className="muted">TideCloak giả lập: đăng nhập, vai trò và kiểm tra quyền chạy như với TideCloak thật.</p>}
       </section>
     );
   }
